@@ -30,7 +30,7 @@ describe('resolveSessionDocumentSources', () => {
       pdfStorageKey: 'pdf_legacy_key',
       pdfFileName: 'legacy.pdf',
       documentMimeType: 'application/pdf',
-      pdfProviderId: 'mineru-cloud',
+      pdfProviderId: 'alidocmind',
     });
 
     expect(sources).toEqual([
@@ -41,7 +41,7 @@ describe('resolveSessionDocumentSources', () => {
         mimeType: 'application/pdf',
         order: 1,
         storageKey: 'pdf_legacy_key',
-        providerId: 'mineru-cloud',
+        providerId: 'alidocmind',
       },
     ]);
   });

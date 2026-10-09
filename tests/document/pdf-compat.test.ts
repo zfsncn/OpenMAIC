@@ -11,7 +11,7 @@ describe('PDF compatibility adapter', () => {
       images: ['data:image/png;base64,abc'],
       metadata: {
         pageCount: 2,
-        parser: 'mineru',
+        parser: 'alidocmind',
         imageMapping: {
           img_1: 'data:image/png;base64,abc',
         },
@@ -25,7 +25,7 @@ describe('PDF compatibility adapter', () => {
             height: 480,
           },
         ],
-        taskId: 'mineru-task-1',
+        taskId: 'alidocmind-job-1',
       },
       tables: [{ page: 1, data: [['Tool', 'State']], caption: 'Inspection table' }],
       formulas: [
@@ -50,7 +50,7 @@ describe('PDF compatibility adapter', () => {
       fileName: 'manual.pdf',
       fileSize: 123,
       mimeType: 'application/pdf',
-      config: { providerId: 'mineru' },
+      config: { providerId: 'alidocmind' },
     });
 
     expect(artifact.metadata).toMatchObject({
@@ -58,7 +58,7 @@ describe('PDF compatibility adapter', () => {
       fileSize: 123,
       mimeType: 'application/pdf',
       pageCount: 2,
-      providerId: 'mineru',
+      providerId: 'alidocmind',
     });
     expect(artifact.metadata).not.toHaveProperty('pdfImages');
     expect(artifact.metadata).not.toHaveProperty('imageMapping');
@@ -66,7 +66,7 @@ describe('PDF compatibility adapter', () => {
     expect(artifact.blocks).toEqual([
       {
         id: 'document-text',
-        type: 'markdown',
+        type: 'text',
         text: '# Safety Checklist\n\nInspect the device before calibration.',
       },
       {
@@ -106,13 +106,13 @@ describe('PDF compatibility adapter', () => {
     ]);
   });
 
-  it('normalizes MinerU Cloud markdown output into a markdown document block', () => {
+  it('normalizes a DOCX parsed by AliDocMind into a document artifact', () => {
     const parsed: ParsedPdfContent = {
       text: '# Cloud Parsed Lesson',
       images: [],
       metadata: {
         pageCount: 1,
-        parser: 'mineru-cloud',
+        parser: 'alidocmind',
       },
     };
 
@@ -121,12 +121,12 @@ describe('PDF compatibility adapter', () => {
       fileName: 'lesson.docx',
       fileSize: 456,
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      config: { providerId: 'mineru-cloud' },
+      config: { providerId: 'alidocmind' },
     });
 
     expect(artifact.blocks[0]).toMatchObject({
       id: 'document-text',
-      type: 'markdown',
+      type: 'text',
       text: '# Cloud Parsed Lesson',
     });
   });

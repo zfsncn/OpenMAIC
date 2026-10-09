@@ -6,8 +6,8 @@
  *
  * Currently Supported Providers:
  * - unpdf: Built-in Node.js PDF parser with text and image extraction
- * - MinerU: Advanced commercial service with OCR, formula, and table extraction
- *   (https://mineru.ai or self-hosted)
+ * - alidocmind: Aliyun Document Mind (LLM version) with OCR, formula, table and
+ *   layout extraction
  *
  * HOW TO ADD A NEW PROVIDER:
  *
@@ -101,9 +101,9 @@
  * - Convert images to base64 data URLs
  * - Return immediately
  *
- * Pattern 2: Remote API (like MinerU)
- * - Upload PDF or provide URL
- * - Create task and get task ID
+ * Pattern 2: Remote API (like AliDocMind)
+ * - Upload the document to the service
+ * - Create / resume a job and get its id
  * - Poll for completion (with timeout)
  * - Download results (text, images, metadata)
  * - Parse and convert to unified format
@@ -143,66 +143,24 @@ import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
-import { extractMinerUResult } from './mineru-parser';
-import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithAliDocMindClient } from './alidocmind-client';
-import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
+import type { ExtractionProgress } from '@/lib/document/types';
 
 const log = createLogger('PDFProviders');
-const DEFAULT_MINERU_BACKEND = 'pipeline';
-
-function getMinerUBackend(): string {
-  return process.env.PDF_MINERU_BACKEND?.trim() || DEFAULT_MINERU_BACKEND;
-}
 
 /**
- * Turn a self-hosted MinerU error body into an actionable message.
- *
- * A lightweight `mineru-api` install (without the `mineru[pipeline]` or
- * `mineru[core]` extras) accepts uploads but fails to parse PDFs/images,
- * surfacing a raw Python traceback (ModuleNotFoundError / ImportError) or a
- * "Device string must not be empty" error. We detect those signatures and
- * return a friendly explanation instead of dumping the raw JSON at the user.
- *
- * Exported for unit testing.
+ * Caller-supplied extras for one parse run: what the document is called, and the
+ * channels a long-running remote provider reports back on. Providers that cannot
+ * observe progress or resume ignore both.
  */
-export function describeSelfHostedMinerUError(status: number, rawBody: string): string {
-  const body = rawBody.toLowerCase();
-  const missingDependency =
-    body.includes('modulenotfounderror') ||
-    body.includes('no module named') ||
-    body.includes('importerror') ||
-    body.includes('device string must not be empty') ||
-    (body.includes('pipeline') && (body.includes('not install') || body.includes('unavailable')));
-
-  if (missingDependency) {
-    return (
-      'The self-hosted MinerU service cannot parse PDF/image files: the ' +
-      'pipeline/core dependencies are not installed. Install `mineru[pipeline]` ' +
-      'or `mineru[core]` on the MinerU server (and start it with ' +
-      '`--backend pipeline`), or switch to MinerU Cloud.'
-    );
-  }
-
-  // Unknown failure: report the status only. The body is logged by the caller
-  // and never echoed, so the parse route cannot relay a target's content.
-  return `MinerU API error (${status})`;
+export interface ParsePDFOptions {
+  fileName?: string;
+  mimeType?: string;
+  /** Forwarded to providers that poll a remote job (see `ExtractionProgress`). */
+  onProgress?: (progress: ExtractionProgress) => void;
+  /** Resume the remote job this token names instead of submitting again. */
+  resumeToken?: string;
 }
-
-// A caller-supplied self-hosted MinerU URL runs under the operator address
-// policy (the same one the routes validated it against: `allowLocalNetworks`
-// unset falls back to ALLOW_LOCAL_NETWORKS); a server-managed one is operator
-// configuration and may reach a local network without the opt-in. Either way
-// the strict transport pins the connect address to the vetted DNS answers and
-// refuses a 3xx instead of following it.
-function selfHostedMinerUPolicy(managed: boolean | undefined): ProviderFetchPolicy {
-  return { allowLocalNetworks: managed ? true : undefined, rejectRedirects: true };
-}
-
-const SELF_HOSTED_MINERU_CONNECTION_FAILED =
-  'Cannot connect to the self-hosted MinerU server, please check the Base URL';
-const SELF_HOSTED_MINERU_INVALID_RESPONSE =
-  'The self-hosted MinerU server returned an invalid response';
 
 /**
  * Parse PDF using specified provider
@@ -210,7 +168,7 @@ const SELF_HOSTED_MINERU_INVALID_RESPONSE =
 export async function parsePDF(
   config: PDFParserConfig,
   pdfBuffer: Buffer,
-  options?: { fileName?: string; mimeType?: string },
+  options?: ParsePDFOptions,
 ): Promise<ParsedPdfContent> {
   const provider = PDF_PROVIDERS[config.providerId];
   if (!provider) {
@@ -233,14 +191,6 @@ export async function parsePDF(
   switch (config.providerId) {
     case 'unpdf':
       result = await parseWithUnpdf(pdfBuffer, config.textOnly === true);
-      break;
-
-    case 'mineru':
-      result = await parseWithMinerU(config, pdfBuffer);
-      break;
-
-    case 'mineru-cloud':
-      result = await parseWithMinerUCloud(config, pdfBuffer, options?.fileName);
       break;
 
     case 'alidocmind':
@@ -342,34 +292,13 @@ async function parseWithUnpdf(pdfBuffer: Buffer, textOnly = false): Promise<Pars
 }
 
 /**
- * Parse PDF using self-hosted MinerU service (mineru-api)
- *
- * Official MinerU API endpoint:
- * POST /file_parse  (multipart/form-data)
- *
- * Response format:
- * { results: { "document.pdf": { md_content, images, content_list, ... } } }
- *
- * @see https://github.com/opendatalab/MinerU
- */
-async function parseWithMinerU(
-  config: PDFParserConfig,
-  pdfBuffer: Buffer,
-): Promise<ParsedPdfContent> {
-  return parseWithMinerUDocument(config, pdfBuffer, {
-    fileName: 'document.pdf',
-    mimeType: 'application/pdf',
-  });
-}
-
-/**
  * Parse a document via AliDocMind (Aliyun Document Mind LLM version).
  * Supports pdf/docx/pptx/xlsx and image types via the same submit → poll → get flow.
  */
 async function parseWithAliDocMind(
   config: PDFParserConfig,
   documentBuffer: Buffer,
-  options?: { fileName?: string; mimeType?: string },
+  options?: ParsePDFOptions,
 ): Promise<ParsedPdfContent> {
   const fileName = options?.fileName || 'document.pdf';
   const result = await parseWithAliDocMindClient(
@@ -386,13 +315,29 @@ async function parseWithAliDocMind(
       enhancementMode: 'VLM',
       outputHtmlTable: true,
     },
+    {
+      ...(options?.onProgress ? { onProgress: options.onProgress } : {}),
+      ...(options?.resumeToken ? { resumeJobId: options.resumeToken } : {}),
+    },
   );
 
   return aliDocMindLayoutsToParsedPdf(result, fileName);
 }
 
-/** Match markdown image syntax `![alt](url)` and capture the URL. */
-const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\((https?:\/\/[^)]+)\)/g;
+/** Match markdown image syntax `![alt](url)`, capturing the alt text and URL. */
+const MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g;
+
+/**
+ * Stand-in for an image reference inside the text being built.
+ *
+ * An image's final id is only known once every download has settled — a failed
+ * download drops out of `pdfImages`, which shifts the ids of every image after
+ * it. So the text is assembled with these tokens and resolved in a second pass,
+ * once the surviving ids are known. `\u0000` cannot occur in the service's text,
+ * so a token can never collide with real content.
+ */
+const imageRefToken = (index: number) => `\u0000aidm-img:${index}\u0000`;
+const IMAGE_REF_TOKEN_RE = /!\[([^\]]*)\]\(\u0000aidm-img:(\d+)\u0000\)/g;
 
 /** Max images downloaded per document (bounds memory + request fan-out). */
 const ALIDOCMIND_MAX_IMAGES = 200;
@@ -551,22 +496,38 @@ async function aliDocMindLayoutsToParsedPdf(
     // outputHtmlTable/LLM enhancement is on — markdownContent may be empty.
     const isTable = l.type === 'table';
     // figure/picture embed image URLs in markdownContent; a chart-type figure
-    // may additionally have llmResult (chart→table). Collect URLs, then strip
-    // them from the text we emit (signed URLs expire; downstream wants base64).
+    // may additionally have llmResult (chart→table).
     const isImage = l.type === 'figure' || l.type === 'picture';
 
-    let md = isTable
-      ? (l.llmResult ?? l.markdownContent ?? l.text ?? '')
-      : (l.markdownContent ?? l.text ?? l.llmResult ?? '');
-
-    if (isImage && md) {
-      for (const m of md.matchAll(MARKDOWN_IMAGE_RE)) {
-        if (m[1] && imageRefs.length < ALIDOCMIND_MAX_IMAGES) {
-          imageRefs.push({ url: m[1], pageNumber: pageNum });
-        }
+    let md: string;
+    if (isImage) {
+      // Signed OSS URLs expire, so they cannot go into the text — but dropping
+      // the block outright left the text with no reference to the image at all,
+      // while the image itself still landed in `pdfImages`. Emit the same
+      // `![](img_N)` the id-addressed rest of the pipeline expects.
+      md = (l.markdownContent ?? '').replace(
+        MARKDOWN_IMAGE_RE,
+        (_whole, alt: string, url: string) => {
+          if (!url || imageRefs.length >= ALIDOCMIND_MAX_IMAGES) return '';
+          const index = imageRefs.length;
+          imageRefs.push({ url, pageNumber: pageNum });
+          // The alt text is kept; only the target is deferred. Replacing the
+          // whole match with the bare token would drop the `![](...)` wrapper,
+          // and a wrapper rebuilt later cannot tell a failed download (which
+          // must vanish) from a succeeded one (which must stay).
+          return `![${alt}](${imageRefToken(index)})`;
+        },
+      );
+      // A chart figure's llmResult is the chart read out as a table — content
+      // the picture alone does not carry — so keep it beside the reference.
+      const chartText = l.llmResult ?? '';
+      if (chartText && !md.includes(chartText)) {
+        md = md ? `${md}\n\n${chartText}` : chartText;
       }
-      // Drop the remote-URL markdown from text; keep any chart llmResult instead.
-      md = l.llmResult ?? '';
+    } else if (isTable) {
+      md = l.llmResult ?? l.markdownContent ?? l.text ?? '';
+    } else {
+      md = l.markdownContent ?? l.text ?? l.llmResult ?? '';
     }
 
     if (md) textParts.push(md);
@@ -589,13 +550,34 @@ async function aliDocMindLayoutsToParsedPdf(
     const src = await fetchAliDocMindImageAsBase64(ref.url);
     return src ? { src, pageNumber: ref.pageNumber } : null;
   });
-  const pdfImagesMeta = fetched
-    .filter((x): x is { src: string; pageNumber: number } => x !== null)
-    .map((x, i) => ({ id: `img_${i + 1}`, src: x.src, pageNumber: x.pageNumber }));
+  // Ids follow reference order, skipping the failures — so the second pass can
+  // turn each token into the id its own image ended up with.
+  const pdfImagesMeta: Array<{ id: string; src: string; pageNumber: number }> = [];
+  const tokenIds = new Map<number, string>();
+  fetched.forEach((image, index) => {
+    if (!image) return;
+    const id = `img_${pdfImagesMeta.length + 1}`;
+    tokenIds.set(index, id);
+    pdfImagesMeta.push({ id, src: image.src, pageNumber: image.pageNumber });
+  });
   const images = pdfImagesMeta.map((m) => m.src);
+  // Resolve the tokens now that the ids are final. The whole image syntax is
+  // replaced, so a reference whose download failed disappears entirely rather
+  // than lingering as a broken `![]()`: a link to an image that is not in
+  // `images[]` dangles, and an empty one is noise.
+  const text = textParts
+    .map((part) =>
+      part.replace(IMAGE_REF_TOKEN_RE, (_match, alt: string, index: string) => {
+        const id = tokenIds.get(Number(index));
+        return id ? `![${alt}](${id})` : '';
+      }),
+    )
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join('\n\n');
 
   return {
-    text: textParts.join('\n\n'),
+    text,
     images,
     layout: layout.length ? layout : undefined,
     metadata: {
@@ -630,97 +612,6 @@ function mapLayoutType(type: string): 'title' | 'text' | 'image' | 'table' | 'fo
     default:
       return null;
   }
-}
-
-export async function parseWithMinerUDocument(
-  config: PDFParserConfig,
-  documentBuffer: Buffer,
-  options: { fileName: string; mimeType: string },
-): Promise<ParsedPdfContent> {
-  if (!config.baseUrl) {
-    throw new Error(
-      'MinerU base URL is required. ' +
-        'Please deploy MinerU locally or specify the server URL. ' +
-        'See: https://github.com/opendatalab/MinerU',
-    );
-  }
-
-  log.info(`[MinerU] Parsing document with MinerU server: ${config.baseUrl}`);
-
-  // Create FormData for file upload
-  const formData = new FormData();
-
-  // Convert Buffer to Blob
-  const arrayBuffer = documentBuffer.buffer.slice(
-    documentBuffer.byteOffset,
-    documentBuffer.byteOffset + documentBuffer.byteLength,
-  );
-  const blob = new Blob([arrayBuffer as ArrayBuffer], {
-    type: options.mimeType,
-  });
-  formData.append('files', blob, options.fileName);
-
-  // MinerU API form fields
-  // Defaults already: return_md=true, formula_enable=true, table_enable=true
-  formData.append('parse_method', 'auto');
-  // `hybrid-auto-engine` may require a GPU/device configuration in the MinerU
-  // service. Default to the broadly compatible pipeline backend; operators can
-  // opt into hybrid/VLM mode with PDF_MINERU_BACKEND when their service is ready.
-  formData.append('backend', getMinerUBackend());
-  formData.append('return_content_list', 'true');
-  formData.append('return_images', 'true');
-
-  // API key (if required by deployment)
-  const headers: Record<string, string> = {};
-  if (config.apiKey) {
-    headers['Authorization'] = `Bearer ${config.apiKey}`;
-  }
-
-  // POST /file_parse
-  let response: Response;
-  try {
-    response = await providerFetch(
-      `${config.baseUrl}/file_parse`,
-      { method: 'POST', headers, body: formData },
-      selfHostedMinerUPolicy(config.managed),
-    );
-  } catch (error) {
-    // Refused, unresolvable, policy-blocked and redirecting targets all get
-    // the same message; the transport detail stays in the server log.
-    log.error('[MinerU] Request to the self-hosted server failed:', error);
-    throw new Error(SELF_HOSTED_MINERU_CONNECTION_FAILED, { cause: error });
-  }
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    log.error(`[MinerU] file_parse failed [status=${response.status}]: ${errorText.slice(0, 500)}`);
-    throw new Error(describeSelfHostedMinerUError(response.status, errorText));
-  }
-
-  // A body that is not JSON must not surface the parser's message: Node's
-  // SyntaxError quotes a snippet of the input.
-  let json: { results?: Record<string, Record<string, unknown>> };
-  try {
-    json = await response.json();
-  } catch (error) {
-    log.error('[MinerU] file_parse returned a non-JSON body:', error);
-    throw new Error(SELF_HOSTED_MINERU_INVALID_RESPONSE, { cause: error });
-  }
-
-  // Response: { results: { "<fileName>": { md_content, images, content_list, ... } } }
-  const fileResult = json?.results?.[options.fileName];
-  if (!fileResult) {
-    const keys = json?.results ? Object.keys(json.results) : [];
-    // Try first available key in case filename doesn't match exactly
-    const fallback = keys.length > 0 ? json.results![keys[0]] : null;
-    if (!fallback) {
-      throw new Error('MinerU returned no results');
-    }
-    log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${options.fileName}"`);
-    return extractMinerUResult(fallback);
-  }
-
-  return extractMinerUResult(fileResult);
 }
 
 /**

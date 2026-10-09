@@ -23,6 +23,13 @@ import type { NextRequest } from 'next/server';
 import { POST } from '@/app/api/verify-pdf-provider/route';
 import { destroyAudioProviderDispatchersForTests } from '@/lib/server/provider-fetch';
 
+// AliDocMind has its own AK/SK probe branch in the route. Every other provider
+// falls through to the provider-neutral "Base-URL providers" branch, which
+// probes whatever base URL it is handed and never consults PDF_PROVIDERS — so
+// `unpdf` (the only other registered PDF provider id) simply stands in for "a
+// provider configured with a base URL" in these transport tests.
+const BASE_URL_PROVIDER = 'unpdf';
+
 const mocks = vi.hoisted(() => ({
   isServerConfiguredProvider: vi.fn(),
   resolveManagedAliDocMindCredentials: vi.fn(),
@@ -194,29 +201,11 @@ describe('POST /api/verify-pdf-provider', () => {
       process.env.ALLOW_LOCAL_NETWORKS = 'true';
     });
 
-    it('verifies a MinerU Cloud endpoint through the transport without echoing its status', async () => {
-      const cloud = await startLoopback();
-
-      const res = await postVerifyPdfProvider({
-        providerId: 'mineru-cloud',
-        apiKey: 'test-key',
-        baseUrl: `${cloud.origin}/api/v4/`,
-      });
-
-      expect(res).toEqual({
-        status: 200,
-        json: { success: true, message: 'Connection successful' },
-      });
-      expect(cloud.requests()).toBe(1);
-      expect(cloud.lastUrl()).toBe('/api/v4/extract-results/batch/test-connection');
-      expect(cloud.lastHeaders()!.authorization).toBe('Bearer test-key');
-    });
-
-    it('verifies a self-hosted MinerU on a local network', async () => {
+    it('verifies a base-URL provider on a local network', async () => {
       const selfHosted = await startLoopback();
 
       const res = await postVerifyPdfProvider({
-        providerId: 'mineru',
+        providerId: BASE_URL_PROVIDER,
         baseUrl: selfHosted.origin,
       });
 
@@ -227,37 +216,30 @@ describe('POST /api/verify-pdf-provider', () => {
       expect(selfHosted.requests()).toBe(1);
     });
 
-    it.each([401, 403])(
-      'answers a MinerU Cloud %i with a fixed message and never echoes the body',
-      async (status) => {
-        const cloud = await startLoopback((_req, res) => {
-          res.writeHead(status, { 'Content-Type': 'text/plain' });
-          res.end('internal-secret-body');
-        });
+    it('sends the resolved key as a bearer token and answers any HTTP status as reachable', async () => {
+      const probe = await startLoopback((_req, res) => {
+        res.writeHead(401, { 'Content-Type': 'text/plain' });
+        res.end('internal-secret-body');
+      });
 
-        const res = await postVerifyPdfProvider({
-          providerId: 'mineru-cloud',
-          apiKey: 'bad-key',
-          baseUrl: cloud.origin,
-        });
+      const res = await postVerifyPdfProvider({
+        providerId: BASE_URL_PROVIDER,
+        apiKey: 'test-key',
+        baseUrl: probe.origin,
+      });
 
-        expect(res).toEqual({
-          status: 500,
-          json: {
-            success: false,
-            errorCode: 'INTERNAL_ERROR',
-            error: 'Authentication failed, please check the API Key',
-          },
-        });
-        expect(JSON.stringify(res.json)).not.toContain('internal-secret-body');
-        expect(cloud.requests()).toBe(1);
-      },
-    );
+      // Any HTTP answer — even a 401 — proves the endpoint is up; the probe
+      // does not interpret the status, and the body is never echoed.
+      expect(res).toEqual({
+        status: 200,
+        json: { success: true, message: 'Connection successful' },
+      });
+      expect(probe.lastHeaders()!.authorization).toBe('Bearer test-key');
+      expect(JSON.stringify(res.json)).not.toContain('internal-secret-body');
+      expect(probe.requests()).toBe(1);
+    });
 
-    it.each([
-      ['mineru-cloud', 302],
-      ['mineru', 308],
-    ])('refuses a %s redirect (%i) and never follows it', async (providerId, status) => {
+    it.each([302, 308])('refuses a redirect (%i) and never follows it', async (status) => {
       const target = await startLoopback();
       const origin = await startLoopback((_req, res) => {
         res.writeHead(status, { Location: `${target.origin}/sink` });
@@ -265,7 +247,7 @@ describe('POST /api/verify-pdf-provider', () => {
       });
 
       const res = await postVerifyPdfProvider({
-        providerId,
+        providerId: BASE_URL_PROVIDER,
         apiKey: 'test-key',
         baseUrl: origin.origin,
       });
@@ -284,7 +266,7 @@ describe('POST /api/verify-pdf-provider', () => {
 
     it('answers connection refused, unresolvable host and timeout identically', async () => {
       const refused = await postVerifyPdfProvider({
-        providerId: 'mineru',
+        providerId: BASE_URL_PROVIDER,
         baseUrl: `http://127.0.0.1:${await closedPort()}`,
       });
 
@@ -297,7 +279,7 @@ describe('POST /api/verify-pdf-provider', () => {
         },
       );
       const notFound = await postVerifyPdfProvider({
-        providerId: 'mineru',
+        providerId: BASE_URL_PROVIDER,
         baseUrl: 'http://missing.test:8000',
       });
       mocks.callbackLookup.mockImplementation(answerWith(LOOPBACK));
@@ -308,7 +290,7 @@ describe('POST /api/verify-pdf-provider', () => {
       const realTimeout = AbortSignal.timeout.bind(AbortSignal);
       vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => realTimeout(50));
       const timedOut = await postVerifyPdfProvider({
-        providerId: 'mineru-cloud',
+        providerId: BASE_URL_PROVIDER,
         apiKey: 'test-key',
         baseUrl: hanging.origin,
       });
@@ -320,36 +302,33 @@ describe('POST /api/verify-pdf-provider', () => {
     });
   });
 
-  it.each(['mineru-cloud', 'mineru'])(
-    'refuses a %s host that rebinds to loopback between validation and connect',
-    async (providerId) => {
-      const trap = await startLoopback();
+  it('refuses a host that rebinds to loopback between validation and connect', async () => {
+    const trap = await startLoopback();
 
-      const res = await postVerifyPdfProvider({
-        providerId,
-        apiKey: 'client-key',
-        baseUrl: `http://rebind.test:${trap.port}`,
-      });
+    const res = await postVerifyPdfProvider({
+      providerId: BASE_URL_PROVIDER,
+      apiKey: 'client-key',
+      baseUrl: `http://rebind.test:${trap.port}`,
+    });
 
-      // The URL-layer guard saw the public answer and let the request through...
-      expect(mocks.promisesLookup).toHaveBeenCalled();
-      // ...the pinned connect-time lookup was offered loopback and refused it.
-      expect(mocks.callbackLookup).toHaveBeenCalledWith(
-        'rebind.test',
-        expect.anything(),
-        expect.any(Function),
-      );
-      expect(res).toEqual(CONNECTION_FAILED);
-      // The socket never reached the rebound target, so the key never did either.
-      expect(trap.requests()).toBe(0);
-    },
-  );
+    // The URL-layer guard saw the public answer and let the request through...
+    expect(mocks.promisesLookup).toHaveBeenCalled();
+    // ...the pinned connect-time lookup was offered loopback and refused it.
+    expect(mocks.callbackLookup).toHaveBeenCalledWith(
+      'rebind.test',
+      expect.anything(),
+      expect.any(Function),
+    );
+    expect(res).toEqual(CONNECTION_FAILED);
+    // The socket never reached the rebound target, so the key never did either.
+    expect(trap.requests()).toBe(0);
+  });
 
   it('still rejects a client-supplied loopback URL up front without the opt-in', async () => {
     const internal = await startLoopback();
 
     const res = await postVerifyPdfProvider({
-      providerId: 'mineru',
+      providerId: BASE_URL_PROVIDER,
       baseUrl: internal.origin,
     });
 
@@ -358,74 +337,67 @@ describe('POST /api/verify-pdf-provider', () => {
     expect(internal.requests()).toBe(0);
   });
 
-  it.each(['mineru-cloud', 'mineru'])(
-    'ignores the client key and base URL for a server-managed %s provider',
-    async (providerId) => {
-      // No opt-in: a server-managed base URL is operator configuration and may
-      // point at a local network.
-      const managed = await startLoopback();
-      const clientTarget = await startLoopback();
-      mocks.isServerConfiguredProvider.mockReturnValue(true);
-      mocks.resolvePDFBaseUrl.mockImplementation((_providerId: string, clientBaseUrl?: string) =>
-        clientBaseUrl === undefined ? managed.origin : clientBaseUrl,
-      );
-      mocks.resolvePDFApiKey.mockImplementation((_providerId: string, clientApiKey?: string) =>
-        clientApiKey === undefined ? 'server-key' : clientApiKey,
-      );
-
-      const res = await postVerifyPdfProvider({
-        providerId,
-        apiKey: 'client-key',
-        baseUrl: clientTarget.origin,
-      });
-
-      expect(res).toEqual({
-        status: 200,
-        json: { success: true, message: 'Connection successful' },
-      });
-      expect(mocks.resolvePDFBaseUrl).toHaveBeenCalledWith(providerId, undefined);
-      expect(mocks.resolvePDFApiKey).toHaveBeenCalledWith(providerId, undefined);
-      expect(managed.requests()).toBe(1);
-      expect(managed.lastHeaders()!.authorization).toBe('Bearer server-key');
-      expect(clientTarget.requests()).toBe(0);
-    },
-  );
-
-  it.each(['mineru-cloud', 'mineru'])(
-    'still refuses cloud metadata as a server-managed %s base URL',
-    async (providerId) => {
-      mocks.isServerConfiguredProvider.mockReturnValue(true);
-      mocks.resolvePDFBaseUrl.mockReturnValue('http://169.254.169.254/latest');
-      mocks.resolvePDFApiKey.mockReturnValue('server-key');
-
-      const res = await postVerifyPdfProvider({ providerId });
-
-      expect(res).toEqual(CONNECTION_FAILED);
-    },
-  );
-
-  it.each([
-    ['mineru-cloud', '?'],
-    ['mineru', '#'],
-    ['mineru', '?x=1'],
-  ])('refuses a client %s base URL ending in %s before any request', async (providerId, tail) => {
-    process.env.ALLOW_LOCAL_NETWORKS = 'true';
-    const internal = await startLoopback();
+  it('ignores the client key and base URL for a server-managed base-URL provider', async () => {
+    // No opt-in: a server-managed base URL is operator configuration and may
+    // point at a local network.
+    const managed = await startLoopback();
+    const clientTarget = await startLoopback();
+    mocks.isServerConfiguredProvider.mockReturnValue(true);
+    mocks.resolvePDFBaseUrl.mockImplementation((_providerId: string, clientBaseUrl?: string) =>
+      clientBaseUrl === undefined ? managed.origin : clientBaseUrl,
+    );
+    mocks.resolvePDFApiKey.mockImplementation((_providerId: string, clientApiKey?: string) =>
+      clientApiKey === undefined ? 'server-key' : clientApiKey,
+    );
 
     const res = await postVerifyPdfProvider({
-      providerId,
+      providerId: BASE_URL_PROVIDER,
       apiKey: 'client-key',
-      baseUrl: `${internal.origin}/internal${tail}`,
+      baseUrl: clientTarget.origin,
     });
 
     expect(res).toEqual({
-      status: 403,
-      json: {
-        success: false,
-        errorCode: 'INVALID_URL',
-        error: 'Base URL must not contain a query string or fragment',
-      },
+      status: 200,
+      json: { success: true, message: 'Connection successful' },
     });
-    expect(internal.requests()).toBe(0);
+    expect(mocks.resolvePDFBaseUrl).toHaveBeenCalledWith(BASE_URL_PROVIDER, undefined);
+    expect(mocks.resolvePDFApiKey).toHaveBeenCalledWith(BASE_URL_PROVIDER, undefined);
+    expect(managed.requests()).toBe(1);
+    expect(managed.lastHeaders()!.authorization).toBe('Bearer server-key');
+    expect(clientTarget.requests()).toBe(0);
   });
+
+  it('still refuses cloud metadata as a server-managed base URL', async () => {
+    mocks.isServerConfiguredProvider.mockReturnValue(true);
+    mocks.resolvePDFBaseUrl.mockReturnValue('http://169.254.169.254/latest');
+    mocks.resolvePDFApiKey.mockReturnValue('server-key');
+
+    const res = await postVerifyPdfProvider({ providerId: BASE_URL_PROVIDER });
+
+    expect(res).toEqual(CONNECTION_FAILED);
+  });
+
+  it.each(['?', '#', '?x=1'])(
+    'refuses a client base URL ending in %s before any request',
+    async (tail) => {
+      process.env.ALLOW_LOCAL_NETWORKS = 'true';
+      const internal = await startLoopback();
+
+      const res = await postVerifyPdfProvider({
+        providerId: BASE_URL_PROVIDER,
+        apiKey: 'client-key',
+        baseUrl: `${internal.origin}/internal${tail}`,
+      });
+
+      expect(res).toEqual({
+        status: 403,
+        json: {
+          success: false,
+          errorCode: 'INVALID_URL',
+          error: 'Base URL must not contain a query string or fragment',
+        },
+      });
+      expect(internal.requests()).toBe(0);
+    },
+  );
 });

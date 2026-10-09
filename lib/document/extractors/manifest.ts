@@ -26,8 +26,6 @@ import {
   ALIDOCMIND_MEDIA_MIMES,
   ALIDOCMIND_MIMES,
   DOCUMENT_MIME_TYPES,
-  MINERU_CLOUD_MIMES,
-  MINERU_SELFHOST_MIMES,
   PLAIN_TEXT_MIMES,
   LOCAL_FFMPEG_MEDIA_MIMES,
 } from '../mime';
@@ -88,40 +86,14 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
       async: false,
     },
   },
-  mineru: {
-    id: 'mineru',
-    displayName: 'MinerU',
-    version: '1',
-    supportedMimeTypes: MINERU_SELFHOST_MIMES,
-    capabilities: {
-      text: true,
-      images: true,
-      tables: true,
-      formulas: true,
-      layout: true,
-      ocr: true,
-      async: false,
-    },
-  },
-  'mineru-cloud': {
-    id: 'mineru-cloud',
-    displayName: 'MinerU (Cloud)',
-    version: '1',
-    supportedMimeTypes: MINERU_CLOUD_MIMES,
-    capabilities: {
-      text: true,
-      images: true,
-      tables: true,
-      formulas: true,
-      layout: true,
-      ocr: true,
-      async: true,
-    },
-  },
   alidocmind: {
     id: 'alidocmind',
     displayName: 'AliDocMind',
-    version: '1',
+    // Bumped to '2' when image blocks started emitting `![](img_N)` position
+    // references instead of dropping the block. The archived text changed, so
+    // the derivation key must change with it — reusing '1' would serve archives
+    // whose text still has no image reference.
+    version: '2',
     supportedMimeTypes: ALIDOCMIND_MIMES,
     capabilities: {
       text: true,

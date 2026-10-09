@@ -68,7 +68,7 @@ describe('document MIME normalization', () => {
     expect(
       isMimeSupportedByProviders(
         { mimeType: 'application/wps-office.pptx', fileName: 'slides.pptx' },
-        ['mineru'],
+        ['alidocmind'],
       ),
     ).toBe(true);
   });
@@ -122,7 +122,7 @@ describe('document MIME normalization', () => {
     expect(
       isMimeSupportedByProviders(
         { mimeType: 'application/wps-office.unknown', fileName: 'lesson.pptx' },
-        ['mineru'],
+        ['alidocmind'],
       ),
     ).toBe(false);
   });
@@ -162,19 +162,22 @@ describe('document MIME normalization', () => {
       ).toBe(DOCUMENT_MIME_TYPES.ppt);
     });
 
-    it('keeps the provider capability split for resolved legacy .ppt', () => {
-      // Self-host MinerU does not support legacy OLE formats; only the cloud
-      // provider does. Resolution must not blur that line.
+    it('rejects resolved legacy .ppt for every remaining provider', () => {
+      // Legacy OLE Office (.doc/.ppt/.xls) used to be the exclusive capability
+      // of a since-removed remote parser. With no provider able to parse it
+      // now, the resolution must still classify it as supported-by-nobody
+      // rather than silently accepting the upload.
       const input = { mimeType: 'application/vnd.ms-office', fileName: 'deck.ppt' };
-      expect(isMimeSupportedByProviders(input, ['mineru'])).toBe(false);
-      expect(isMimeSupportedByProviders(input, ['mineru-cloud'])).toBe(true);
+      expect(isMimeSupportedByProviders(input, ['unpdf'])).toBe(false);
+      expect(isMimeSupportedByProviders(input, ['alidocmind'])).toBe(false);
+      expect(isMimeSupportedByProviders(input, ['plain-text'])).toBe(false);
     });
 
     it('passes provider whitelists for providers that support the format', () => {
       expect(
         isMimeSupportedByProviders(
           { mimeType: 'application/vnd.ms-office', fileName: 'slides.pptx' },
-          ['mineru'],
+          ['alidocmind'],
         ),
       ).toBe(true);
     });
@@ -189,18 +192,31 @@ describe('document MIME normalization', () => {
       expect(
         isMimeSupportedByProviders(
           { mimeType: 'application/vnd.ms-office', fileName: 'blob.bin' },
-          ['mineru-cloud'],
+          ['alidocmind'],
         ),
       ).toBe(false);
     });
+  });
+
+  it('rejects the image formats only the removed providers used to handle', () => {
+    // WebP and JP2 were only ever handled by the removed providers;
+    // AliDocMind's contract covers JPG/JPEG/PNG/BMP/GIF. They stay registered
+    // as formats so the extension table resolves them, but no provider accepts
+    // them.
+    const webp = { mimeType: 'image/webp', fileName: 'shot.webp' };
+    const jp2 = { mimeType: 'image/jpeg2000', fileName: 'photo.jp2' };
+    for (const provider of ['unpdf', 'alidocmind', 'plain-text']) {
+      expect(isMimeSupportedByProviders(webp, [provider])).toBe(false);
+      expect(isMimeSupportedByProviders(jp2, [provider])).toBe(false);
+    }
   });
 
   it('accepts a non-canonical browser MIME for a provider that supports the format', () => {
     // Regression: previously the raw non-canonical MIME leaked through and
     // failed the provider whitelist despite the file being valid.
     expect(
-      isMimeSupportedByProviders({ mimeType: 'image/jpeg2000', fileName: 'photo.jp2' }, [
-        'mineru-cloud',
+      isMimeSupportedByProviders({ mimeType: 'image/x-ms-bmp', fileName: 'chart.bmp' }, [
+        'alidocmind',
       ]),
     ).toBe(true);
   });
@@ -221,7 +237,9 @@ describe('document MIME normalization', () => {
 
     it('rejects audio/video for document-only providers', () => {
       expect(
-        isMimeSupportedByProviders({ mimeType: 'video/mp4', fileName: 'lesson.mp4' }, ['mineru']),
+        isMimeSupportedByProviders({ mimeType: 'video/mp4', fileName: 'lesson.mp4' }, [
+          'plain-text',
+        ]),
       ).toBe(false);
       expect(
         isMimeSupportedByProviders({ mimeType: 'video/mp4', fileName: 'lesson.mp4' }, ['unpdf']),

@@ -1,6 +1,6 @@
 # PDF 解析系统
 
-提供统一接口支持多种 PDF 解析提供商。
+提供统一接口支持多种文档解析提供商。
 
 ## 支持的提供商
 
@@ -9,45 +9,46 @@
 - **成本**: 免费，内置
 - **特性**: 基础文本提取、图片提取
 - **要求**: 无
-- **使用**: 直接上传 PDF 文件
+- **支持格式**: 仅 PDF
 
-### 2. MinerU (本地部署)
+### 2. AliDocMind (阿里云文档智能，LLM 版)
 
-- **成本**: 免费（需要自己部署）
+- **成本**: 按量计费（阿里云）
 - **特性**:
   - 高级文本提取（保留 Markdown 布局）
-  - 表格识别
-  - 公式提取（LaTeX）
-  - 更好的 OCR 支持
-  - 多种输出格式（markdown, JSON, docx, html, latex）
+  - 表格识别（可输出 HTML 表格）
+  - 公式提取
+  - 版面分析、OCR
 - **要求**:
-  - 部署 MinerU 服务（Docker 或源码）
-  - 配置服务器地址
-- **优势**: 数据隐私、无文件大小限制
+  - 一对阿里云 AccessKey（AK/SK），或由服务端托管（见下方「凭据来源」）
+- **支持格式**: pdf / docx / pptx / xlsx / png / jpeg / bmp / gif
+- **说明**: 远程异步任务，解析期间会上报进度，并支持用 job id 续跑
 
-## 快速开始
+> 系统默认解析器是 AliDocMind；当它不可用（没有凭据）时回落到 `unpdf`。
 
-### 部署 MinerU（可选）
+## 凭据来源
+
+服务端托管优先。在部署的 env-file 中配置：
 
 ```bash
-# Docker 部署（推荐）
-docker pull opendatalab/mineru:latest
-docker run -d --name mineru -p 8080:8080 opendatalab/mineru:latest
-
-# 验证
-curl http://localhost:8080/api/health
+ALIDOCMIND_ACCESS_KEY_ID=<AccessKey ID>
+ALIDOCMIND_ACCESS_KEY_SECRET=<AccessKey Secret>
+# 可选，缺省为 https://docmind-api.cn-hangzhou.aliyuncs.com
+ALIDOCMIND_BASE_URL=
 ```
 
-### API 使用
+三者齐备时该 provider 即为**服务端托管**：全部客户端自动可用，并且不需要各自配置。
+未托管时，每个用户在「设置 → 模型服务 → PDF」里自填 AK/SK（存浏览器本地）。
 
-#### 使用 unpdf（文件上传）
+## API 使用
 
 ```typescript
 const formData = new FormData();
-formData.append('pdf', pdfFile);
-formData.append('providerId', 'unpdf');
+formData.append('file', pdfFile);
+formData.append('providerId', 'alidocmind');
+// 不传 providerId 时按注册表顺序自动选择
 
-const response = await fetch('/api/parse-pdf', {
+const response = await fetch('/api/extract-document', {
   method: 'POST',
   body: formData,
 });
@@ -56,31 +57,14 @@ const result = await response.json();
 // result.data: ParsedPdfContent
 ```
 
-#### 使用 MinerU（本地服务）
-
-```typescript
-const formData = new FormData();
-formData.append('pdf', pdfFile);
-formData.append('providerId', 'mineru');
-formData.append('baseUrl', 'http://localhost:8080');
-
-const response = await fetch('/api/parse-pdf', {
-  method: 'POST',
-  body: formData,
-});
-
-const result = await response.json();
-// result.data: ParsedPdfContent with imageMapping
-```
-
 ## 响应格式
 
 ```typescript
 interface ParsedPdfContent {
-  text: string; // 提取的文本（MinerU 为 Markdown）
+  text: string; // 提取的文本（AliDocMind 为 Markdown，图片以 img_N 引用）
   images: string[]; // Base64 图片数组
 
-  // 扩展特性（MinerU）
+  // 扩展特性
   tables?: Array<{
     page: number;
     data: string[][];
@@ -102,17 +86,17 @@ interface ParsedPdfContent {
 
   metadata?: {
     pageCount: number;
-    parser: 'unpdf' | 'mineru';
+    parser: 'unpdf' | 'alidocmind';
     fileName?: string;
     fileSize?: number;
     processingTime?: number;
 
-    // 用于内容生成流程（MinerU）
+    // 用于内容生成流程
     imageMapping?: Record<string, string>; // img_1 -> base64 URL
     pdfImages?: Array<{
       id: string; // img_1, img_2, etc.
       src: string; // base64 data URL
-      pageNumber: number; // PDF 页码
+      pageNumber: number; // 页码
       description?: string; // 图片描述
     }>;
   };
@@ -121,16 +105,12 @@ interface ParsedPdfContent {
 
 ## 与内容生成集成
 
-MinerU 解析器与内容生成流程无缝集成：
-
 ```typescript
-// 1. 解析 PDF
+// 1. 解析文档
 const parseResult = await parsePDF(
-  {
-    providerId: 'mineru',
-    baseUrl: 'http://localhost:8080',
-  },
+  { providerId: 'alidocmind' },
   buffer,
+  { fileName, onProgress, resumeToken },
 );
 
 // 2. 提取数据
@@ -141,8 +121,8 @@ const imageMapping = parseResult.metadata.imageMapping; // 图片映射
 // 3. 生成场景大纲
 await generateSceneOutlinesFromRequirements(
   requirements,
-  pdfText, // Markdown 内容
-  pdfImages, // 带页码的图片
+  pdfText,
+  pdfImages,
   aiCall,
 );
 
@@ -158,14 +138,15 @@ await buildSceneFromOutline(
 
 ## 图片处理流程
 
-MinerU 的图片处理：
+1. **提取**: 文档 → AliDocMind → Markdown + 图片（图片托管在阿里云 OSS）
+2. **下载内联**: OSS 签名 URL 会过期，因此按并发上限下载并转为 base64
+3. **改写引用**: `![](oss-url)` → `![](img_1)`，下载失败的引用整段移除
+4. **映射**: 创建 `{ "img_1": "data:image/png;base64,..." }`
+5. **生成**: AI 使用 `img_1` 引用生成幻灯片
+6. **解析**: `resolveImageIds()` 替换为实际 URL
+7. **渲染**: 幻灯片显示图片
 
-1. **提取**: PDF → MinerU → Markdown + 图片
-2. **转换**: `![alt](images/img_1.png)` → `![alt](img_1)`
-3. **映射**: 创建 `{ "img_1": "data:image/png;base64,..." }`
-4. **生成**: AI 使用 `img_1` 引用生成幻灯片
-5. **解析**: `resolveImageIds()` 替换为实际 URL
-6. **渲染**: 幻灯片显示图片
+> 只允许抓取 `*.oss-*.aliyuncs.com` 上的图片，单张有大小上限，且禁止重定向 —— 防止把图片下载变成 SSRF 通道。
 
 ## 配置
 
@@ -175,105 +156,39 @@ MinerU 的图片处理：
 import { useSettingsStore } from '@/lib/store/settings';
 
 useSettingsStore.setState({
-  pdfProviderId: 'mineru',
+  pdfProviderId: 'alidocmind',
   pdfProvidersConfig: {
-    mineru: {
-      baseUrl: 'http://localhost:8080',
-      apiKey: 'optional-if-needed',
+    alidocmind: {
+      accessKeyId: 'LTAI...',
+      accessKeySecret: '...',
     },
   },
 });
 ```
 
-### 请求级配置
-
-```typescript
-// 在 API 调用时覆盖全局设置
-formData.append('providerId', 'mineru');
-formData.append('baseUrl', 'http://your-server:8080');
-formData.append('apiKey', 'optional');
-```
-
 ## 添加新的提供商
 
-### 1. 定义提供商
+三处必须同步（漏一处会被漂移守卫测试抓出来）：
 
-`lib/pdf/constants.ts`:
+1. `lib/pdf/types.ts` —— `PDFProviderId` 联合类型
+2. `lib/pdf/constants.ts` —— `PDF_PROVIDERS` 注册表（UI 下拉直接由它派生）
+3. `lib/document/extractors/manifest.ts` —— 浏览器安全的 manifest 条目（含 `version`）
+4. `lib/document/mime.ts` —— `PROVIDER_SUPPORTED_MIME_TYPES` 能力矩阵
 
-```typescript
-export const PDF_PROVIDERS = {
-  myProvider: {
-    id: 'myProvider',
-    name: 'My Provider',
-    requiresApiKey: true,
-    features: ['text', 'images'],
-  },
-};
-```
+再在 `lib/pdf/pdf-providers.ts` 的 `parsePDF()` switch 中实现分派。
 
-### 2. 实现解析器
-
-`lib/pdf/pdf-providers.ts`:
-
-```typescript
-async function parseWithMyProvider(
-  config: PDFParserConfig,
-  pdfBuffer: Buffer
-): Promise<ParsedPdfContent> {
-  // 实现解析逻辑
-  return {
-    text: '...',
-    images: [...],
-    metadata: {
-      pageCount: 0,
-      parser: 'myProvider',
-    },
-  };
-}
-```
-
-### 3. 添加到路由
-
-```typescript
-switch (config.providerId) {
-  case 'unpdf':
-    result = await parseWithUnpdf(pdfBuffer);
-    break;
-  case 'mineru':
-    result = await parseWithMinerU(config, pdfBuffer);
-    break;
-  case 'myProvider':
-    result = await parseWithMyProvider(config, pdfBuffer);
-    break;
-}
-```
-
-## 调试工具
-
-访问 http://localhost:3000/debug/pdf-parser 测试解析功能：
-
-- 切换提供商（unpdf/MinerU）
-- 上传 PDF 文件
-- 配置服务器地址
-- 查看解析结果
-- 检查图片映射
+> ⚠️ 若抽取出的正文发生变化，必须同步 bump `manifest.ts` 里的 `version` —— 它是派生缓存的
+> `extractor_version` 的一半，不 bump 会把旧归档当成同一份内容复用。
 
 ## 常见问题
 
-### Q: MinerU 服务无法连接？
+### Q: AliDocMind 认证失败？
 
 **A**: 检查：
 
-```bash
-# 服务状态
-docker ps | grep mineru
-
-# 网络连通性
-curl http://localhost:8080/api/health
-
-# 日志
-docker logs mineru
-```
+1. AK/SK 是否成对且正确（AK 形如 `LTAI...`）
+2. 该 RAM 子账号是否具备文档智能 / OSS 所需权限
+3. 需要访问外网 `docmind-api.cn-hangzhou.aliyuncs.com` 与 OSS
 
 ### Q: 图片不显示？
 
@@ -283,73 +198,25 @@ docker logs mineru
 2. 图片 ID 格式正确（img_1, img_2）
 3. Base64 编码完整
 
-### Q: 解析速度慢？
-
-**A**: 优化：
-
-```bash
-# 增加 Docker 资源
-docker run -d \
-  --name mineru \
-  -p 8080:8080 \
-  --memory=4g \
-  --cpus=2 \
-  opendatalab/mineru:latest
-```
-
-### Q: unpdf vs MinerU 如何选择？
+### Q: unpdf 还是 AliDocMind？
 
 **A**: 选择建议：
 
-| 场景               | 推荐   |
-| ------------------ | ------ |
-| 简单 PDF（纯文本） | unpdf  |
-| 包含表格、公式     | MinerU |
-| 需要保留布局       | MinerU |
-| 快速测试           | unpdf  |
-| 生产环境           | MinerU |
-| 无法部署服务       | unpdf  |
-
-## 性能建议
-
-### MinerU 并发处理
-
-```typescript
-const files = [file1, file2, file3];
-
-const results = await Promise.all(
-  files.map((file) => {
-    const formData = new FormData();
-    formData.append('pdf', file);
-    formData.append('providerId', 'mineru');
-    return fetch('/api/parse-pdf', {
-      method: 'POST',
-      body: formData,
-    }).then((r) => r.json());
-  }),
-);
-```
-
-### 结果缓存
-
-```typescript
-// 考虑缓存解析结果
-const cacheKey = `pdf_${fileHash}`;
-const cached = localStorage.getItem(cacheKey);
-if (cached) {
-  return JSON.parse(cached);
-}
-```
+| 场景                     | 推荐       |
+| ------------------------ | ---------- |
+| 简单 PDF（纯文本）       | unpdf      |
+| 包含表格、公式、版面     | AliDocMind |
+| 需要 OCR                 | AliDocMind |
+| 快速测试 / 无凭据环境    | unpdf      |
+| 生产环境                 | AliDocMind |
 
 ## 参考资源
 
-- **MinerU GitHub**: https://github.com/opendatalab/MinerU
-- **快速开始**: `/MINERU_QUICKSTART.md`
-- **变更说明**: `/MINERU_LOCAL_DEPLOYMENT.md`
-- **调试工具**: http://localhost:3000/debug/pdf-parser
+- **AliDocMind 文档**: https://help.aliyun.com/zh/document-mind/
+- **unpdf**: https://github.com/unjs/unpdf
 
 ---
 
-**最后更新**: 2026-02-11
-**模式**: 本地自托管
+**最后更新**: 2026-10-04
+**解析器**: unpdf / AliDocMind
 **状态**: 生产就绪

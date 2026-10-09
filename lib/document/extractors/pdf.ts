@@ -1,8 +1,6 @@
-import { parseWithMinerUCloud } from '@/lib/pdf/mineru-cloud';
-import { parsePDF, parseWithMinerUDocument } from '@/lib/pdf/pdf-providers';
+import { parsePDF } from '@/lib/pdf/pdf-providers';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
-import { DOCUMENT_MIME_TYPES } from '../mime';
 import { parsedPdfToDocumentArtifact } from '../pdf-compat';
 import type { DocumentExtractorInput, DocumentExtractorProvider } from '../types';
 import { getDocumentExtractorManifestEntry, type DocumentExtractorManifestEntry } from './manifest';
@@ -37,26 +35,20 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
       };
       let parsed;
       if (id === 'alidocmind') {
-        // AliDocMind handles pdf/docx/pptx/xlsx/images through one flow.
+        // AliDocMind handles pdf/docx/pptx/xlsx/images through one flow, and
+        // that flow is a remote job: the service publishes its own percentage
+        // while it runs and keeps the job queryable after it ends, so both a
+        // progress report and a resume handle exist to pass along.
         parsed = await parsePDF(config, input.buffer, {
           fileName: input.fileName,
           mimeType: input.mimeType,
+          ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+          ...(input.resumeToken ? { resumeToken: input.resumeToken } : {}),
         });
-      } else if (id === 'mineru-cloud') {
-        parsed = await parseWithMinerUCloud(config, input.buffer, input.fileName);
-      } else if (id === 'mineru') {
-        // Self-host MinerU routes every type (incl. pdf) through /file_parse.
-        parsed = await parseWithMinerUDocument(config, input.buffer, {
-          fileName: input.fileName || 'document.pdf',
-          mimeType: input.mimeType,
-        });
-      } else if (input.mimeType === DOCUMENT_MIME_TYPES.pdf) {
-        parsed = await parsePDF(config, input.buffer);
       } else {
-        parsed = await parseWithMinerUDocument(config, input.buffer, {
-          fileName: input.fileName || 'document',
-          mimeType: input.mimeType,
-        });
+        // unpdf is PDF-only: the registry pins its supported MIME types, so a
+        // non-PDF input never reaches this branch.
+        parsed = await parsePDF(config, input.buffer);
       }
 
       return parsedPdfToDocumentArtifact(parsed, input);

@@ -3,9 +3,10 @@ import type { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   isServerConfiguredProvider: vi.fn(() => false),
+  resolveManagedAliDocMindCredentials: vi.fn(() => undefined),
   resolvePDFApiKey: vi.fn((_providerId: string, clientKey?: string) => clientKey || ''),
   resolvePDFBaseUrl: vi.fn((_providerId: string, clientBaseUrl?: string) => clientBaseUrl),
-  parseWithMinerUCloud: vi.fn(),
+  parsePDF: vi.fn(),
   resolveServerAsset: vi.fn(),
 }));
 
@@ -20,12 +21,16 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/lib/server/provider-config', () => ({
   isServerConfiguredProvider: mocks.isServerConfiguredProvider,
+  resolveManagedAliDocMindCredentials: mocks.resolveManagedAliDocMindCredentials,
   resolvePDFApiKey: mocks.resolvePDFApiKey,
   resolvePDFBaseUrl: mocks.resolvePDFBaseUrl,
 }));
 
-vi.mock('@/lib/pdf/mineru-cloud', () => ({
-  parseWithMinerUCloud: mocks.parseWithMinerUCloud,
+// The only remote document extractor left is AliDocMind, which reaches the
+// vendor through `parsePDF` (lib/pdf/pdf-providers). Mocking that seam keeps
+// the route's provider-config forwarding observable without any network call.
+vi.mock('@/lib/pdf/pdf-providers', () => ({
+  parsePDF: mocks.parsePDF,
 }));
 
 vi.mock('@/lib/persistence/resolve-server-asset', () => ({
@@ -37,6 +42,8 @@ async function postExtractDocument(input: {
   providerId?: string;
   apiKey?: string;
   baseUrl?: string;
+  accessKeyId?: string;
+  accessKeySecret?: string;
 }) {
   const { POST } = await import('@/app/api/extract-document/route');
   const formData = new FormData();
@@ -44,6 +51,8 @@ async function postExtractDocument(input: {
   if (input.providerId) formData.append('providerId', input.providerId);
   if (input.apiKey) formData.append('apiKey', input.apiKey);
   if (input.baseUrl) formData.append('baseUrl', input.baseUrl);
+  if (input.accessKeyId) formData.append('accessKeyId', input.accessKeyId);
+  if (input.accessKeySecret) formData.append('accessKeySecret', input.accessKeySecret);
 
   const request = new Request('http://localhost/api/extract-document', {
     method: 'POST',
@@ -57,24 +66,23 @@ describe('POST /api/extract-document', () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     mocks.isServerConfiguredProvider.mockReturnValue(false);
+    mocks.resolveManagedAliDocMindCredentials.mockReturnValue(undefined);
     mocks.resolvePDFApiKey.mockImplementation(
       (_providerId: string, clientKey?: string) => clientKey || '',
     );
     mocks.resolvePDFBaseUrl.mockImplementation(
       (_providerId: string, clientBaseUrl?: string) => clientBaseUrl,
     );
-    mocks.parseWithMinerUCloud.mockReset();
-    mocks.parseWithMinerUCloud.mockResolvedValue({
-      text: 'cloud parsed text',
+    mocks.parsePDF.mockReset();
+    mocks.parsePDF.mockResolvedValue({
+      text: 'ali parsed text',
       images: [],
       metadata: {
         pageCount: 1,
-        parser: 'mineru-cloud',
+        parser: 'alidocmind',
       },
     });
     mocks.resolveServerAsset.mockReset();
-    delete process.env.PDF_MINERU_BASE_URL;
-    delete process.env.PDF_MINERU_API_KEY;
   });
 
   it.each([
@@ -135,8 +143,9 @@ describe('POST /api/extract-document', () => {
       file: new File([new Uint8Array(51 * 1024 * 1024)], 'large.pdf', {
         type: 'application/pdf',
       }),
-      providerId: 'mineru-cloud',
-      apiKey: 'cloud-key',
+      providerId: 'alidocmind',
+      accessKeyId: 'ak',
+      accessKeySecret: 'sk',
     });
     const json = await res.json();
 
@@ -146,7 +155,7 @@ describe('POST /api/extract-document', () => {
       errorCode: 'INVALID_REQUEST',
     });
     expect(json.error).toContain('Maximum size is 50MB');
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
   });
 
   it('returns 400 for an unknown requested provider', async () => {
@@ -184,29 +193,12 @@ describe('POST /api/extract-document', () => {
     });
   });
 
-  it('returns actionable 422 diagnostics when DOCX requires unconfigured MinerU', async () => {
-    const res = await postExtractDocument({
-      file: new File(['not really docx'], 'lesson.docx', {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      }),
-    });
-    const json = await res.json();
-
-    expect(res.status).toBe(422);
-    expect(json).toMatchObject({
-      success: false,
-      errorCode: 'INVALID_REQUEST',
-    });
-    expect(json.error).toContain('DOCX extraction requires a configured MinerU document extractor');
-    expect(json.error).toContain('no self-hosted MinerU base URL is configured');
-    expect(json.error).toContain('ALLOW_MINERU_CLOUD_FALLBACK');
-  });
-
-  it('allows MinerU Cloud PDF extraction with an API key and no base URL', async () => {
+  it('runs an AliDocMind PDF extraction and forwards its config and options', async () => {
     const res = await postExtractDocument({
       file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
-      providerId: 'mineru-cloud',
-      apiKey: 'cloud-key',
+      providerId: 'alidocmind',
+      accessKeyId: 'ak',
+      accessKeySecret: 'sk',
     });
     const json = await res.json();
 
@@ -214,53 +206,34 @@ describe('POST /api/extract-document', () => {
     expect(json).toMatchObject({
       success: true,
       data: {
-        text: 'cloud parsed text',
+        text: 'ali parsed text',
         metadata: {
-          parser: 'mineru-cloud',
+          parser: 'alidocmind',
+          mimeType: 'application/pdf',
         },
       },
     });
-    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+    // The extractor receives the resolved config plus the per-run extras
+    // (file name + MIME). No progress/resume hooks exist for this call, so the
+    // options object carries only those two keys.
+    expect(mocks.parsePDF).toHaveBeenCalledWith(
       expect.objectContaining({
-        providerId: 'mineru-cloud',
-        apiKey: 'cloud-key',
-        baseUrl: undefined,
+        providerId: 'alidocmind',
+        accessKeyId: 'ak',
+        accessKeySecret: 'sk',
       }),
       expect.any(Buffer),
-      'lesson.pdf',
+      { fileName: 'lesson.pdf', mimeType: 'application/pdf' },
     );
   });
 
-  it('fails loudly instead of silently falling back to MinerU Cloud for DOCX when self-hosted MinerU is unavailable', async () => {
+  it('auto-selects AliDocMind for a DOCX upload (the only Office-capable extractor)', async () => {
     const res = await postExtractDocument({
       file: new File(['not really docx'], 'lesson.docx', {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       }),
-      apiKey: 'cloud-key',
-    });
-    const json = await res.json();
-
-    expect(res.status).toBe(422);
-    expect(json).toMatchObject({
-      success: false,
-      errorCode: 'INVALID_REQUEST',
-    });
-    // The request selected self-hosted MinerU and a MinerU Cloud key is
-    // present, yet without the operator opt-in the cloud must not be used —
-    // the error names what was configured and what was unavailable.
-    expect(json.error).toContain('DOCX extraction requires a configured MinerU document extractor');
-    expect(json.error).toContain('no self-hosted MinerU base URL is configured');
-    expect(json.error).toContain('ALLOW_MINERU_CLOUD_FALLBACK');
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
-  });
-
-  it('uses MinerU Cloud for DOCX only when the operator explicitly opts in via ALLOW_MINERU_CLOUD_FALLBACK', async () => {
-    vi.stubEnv('ALLOW_MINERU_CLOUD_FALLBACK', '1');
-    const res = await postExtractDocument({
-      file: new File(['not really docx'], 'lesson.docx', {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      }),
-      apiKey: 'cloud-key',
+      accessKeyId: 'ak',
+      accessKeySecret: 'sk',
     });
     const json = await res.json();
 
@@ -268,21 +241,19 @@ describe('POST /api/extract-document', () => {
     expect(json).toMatchObject({
       success: true,
       data: {
-        text: 'cloud parsed text',
+        text: 'ali parsed text',
         metadata: {
-          parser: 'mineru-cloud',
-          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          parser: 'alidocmind',
         },
       },
     });
-    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
-      expect.objectContaining({
-        providerId: 'mineru-cloud',
-        apiKey: 'cloud-key',
-        baseUrl: undefined,
-      }),
+    expect(mocks.parsePDF).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'alidocmind' }),
       expect.any(Buffer),
-      'lesson.docx',
+      {
+        fileName: 'lesson.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
     );
   });
 });
@@ -302,19 +273,20 @@ describe('POST /api/extract-document (asset-id form)', () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     mocks.isServerConfiguredProvider.mockReturnValue(false);
+    mocks.resolveManagedAliDocMindCredentials.mockReturnValue(undefined);
     mocks.resolvePDFApiKey.mockImplementation(
       (_providerId: string, clientKey?: string) => clientKey || '',
     );
     mocks.resolvePDFBaseUrl.mockImplementation(
       (_providerId: string, clientBaseUrl?: string) => clientBaseUrl,
     );
-    mocks.parseWithMinerUCloud.mockReset();
-    mocks.parseWithMinerUCloud.mockResolvedValue({
-      text: 'cloud parsed text',
+    mocks.parsePDF.mockReset();
+    mocks.parsePDF.mockResolvedValue({
+      text: 'ali parsed text',
       images: [],
       metadata: {
         pageCount: 1,
-        parser: 'mineru-cloud',
+        parser: 'alidocmind',
       },
     });
     mocks.resolveServerAsset.mockReset();
@@ -364,8 +336,9 @@ describe('POST /api/extract-document (asset-id form)', () => {
       assetId: 'ast_abc',
       fileName: 'lesson.pdf',
       mimeType: 'application/pdf',
-      providerId: 'mineru-cloud',
-      apiKey: 'cloud-key',
+      providerId: 'alidocmind',
+      accessKeyId: 'ak',
+      accessKeySecret: 'sk',
     });
     const json = await res.json();
 
@@ -373,20 +346,20 @@ describe('POST /api/extract-document (asset-id form)', () => {
     expect(json).toMatchObject({
       success: true,
       data: {
-        text: 'cloud parsed text',
+        text: 'ali parsed text',
         metadata: {
-          parser: 'mineru-cloud',
+          parser: 'alidocmind',
         },
       },
     });
-    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+    expect(mocks.parsePDF).toHaveBeenCalledWith(
       expect.objectContaining({
-        providerId: 'mineru-cloud',
-        apiKey: 'cloud-key',
-        baseUrl: undefined,
+        providerId: 'alidocmind',
+        accessKeyId: 'ak',
+        accessKeySecret: 'sk',
       }),
       expect.any(Buffer),
-      'lesson.pdf',
+      { fileName: 'lesson.pdf', mimeType: 'application/pdf' },
     );
   });
 
@@ -504,7 +477,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
       assetId: 'ast_abc',
       fileName: 'lesson.pdf',
       mimeType: 'application/pdf',
-      providerId: 'mineru-cloud',
+      providerId: 'alidocmind',
       baseUrl: 'http://192.168.1.10/v1/',
     });
     const json = await res.json();
@@ -514,7 +487,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
       success: false,
       errorCode: 'INVALID_URL',
     });
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
   });
 
   it('rejects a client-supplied local baseUrl when ALLOW_LOCAL_NETWORKS is unset', async () => {
@@ -530,7 +503,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
       assetId: 'ast_abc',
       fileName: 'lesson.pdf',
       mimeType: 'application/pdf',
-      providerId: 'mineru-cloud',
+      providerId: 'alidocmind',
       baseUrl: 'http://127.0.0.1:8000/v1/',
     });
     const json = await res.json();
@@ -540,10 +513,13 @@ describe('POST /api/extract-document (asset-id form)', () => {
       success: false,
       errorCode: 'INVALID_URL',
     });
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
   });
 
-  it('lets the JSON path proceed when ALLOW_LOCAL_NETWORKS=true opts a local base URL in', async () => {
+  it('rejects a non-official base URL even when ALLOW_LOCAL_NETWORKS=true (AliDocMind is official-endpoint-only)', async () => {
+    // AliDocMind's SDK builds its own agent, so a client endpoint can never be
+    // pinned to a validated address — only the official regional host is
+    // accepted, and the ALLOW_LOCAL_NETWORKS opt-in does not relax that.
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
     mocks.resolveServerAsset.mockResolvedValue({
@@ -556,20 +532,45 @@ describe('POST /api/extract-document (asset-id form)', () => {
       assetId: 'ast_abc',
       fileName: 'lesson.pdf',
       mimeType: 'application/pdf',
-      providerId: 'mineru-cloud',
+      providerId: 'alidocmind',
       baseUrl: 'http://192.168.1.10/v1/',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_URL',
+    });
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
+  });
+
+  it('accepts an official AliDocMind host as a client base URL', async () => {
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('%PDF-1.4'),
+      mimeType: 'application/pdf',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+      providerId: 'alidocmind',
+      baseUrl: 'https://docmind-api.cn-hangzhou.aliyuncs.com',
     });
     const json = await res.json();
 
     expect(res.status).toBe(200);
     expect(json).toMatchObject({ success: true });
-    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+    expect(mocks.parsePDF).toHaveBeenCalledWith(
       expect.objectContaining({
-        providerId: 'mineru-cloud',
-        baseUrl: 'http://192.168.1.10/v1/',
+        providerId: 'alidocmind',
+        // The endpoint guard normalizes to the bare host.
+        baseUrl: 'docmind-api.cn-hangzhou.aliyuncs.com',
       }),
       expect.any(Buffer),
-      'lesson.pdf',
+      { fileName: 'lesson.pdf', mimeType: 'application/pdf' },
     );
   });
 
@@ -593,7 +594,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
       errorCode: 'INVALID_REQUEST',
     });
     expect(json.error).toContain('Maximum size is 50MB');
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
     // The route passes its size cap to the resolver so the store can reject
     // from the recorded length without ever materializing the bytes.
     expect(mocks.resolveServerAsset).toHaveBeenCalledWith(
@@ -619,7 +620,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
       errorCode: 'INVALID_REQUEST',
     });
     expect(json.error).toContain('Maximum size is 50MB');
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
   });
 
   it('returns 400 for an unknown provider on the JSON path without echoing the provider id', async () => {
@@ -644,7 +645,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
     });
     // Generic static message — the offending provider id is never echoed.
     expect(json.error).not.toContain('bogus-provider');
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
   });
 
   it('answers an unsupported MIME with a generic 400 that never echoes the caller MIME type', async () => {
@@ -671,7 +672,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
     // interpolated message (which carries the caller's MIME type); the
     // asset-id form must answer with a generic static message instead.
     expect(json.error).not.toContain(probeMime);
-    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+    expect(mocks.parsePDF).not.toHaveBeenCalled();
   });
 
   it('treats a known document provider that cannot extract the MIME as a hint and auto-selects by MIME type', async () => {
@@ -737,14 +738,15 @@ describe('POST /api/extract-document (asset-id form)', () => {
       buffer: Buffer.from('%PDF-1.4'),
       mimeType: 'application/pdf',
     });
-    mocks.parseWithMinerUCloud.mockRejectedValue(new Error('upstream extractor exploded'));
+    mocks.parsePDF.mockRejectedValue(new Error('upstream extractor exploded'));
 
     const res = await postExtractDocumentByAssetId({
       assetId: 'ast_abc',
       fileName: 'lesson.pdf',
       mimeType: 'application/pdf',
-      providerId: 'mineru-cloud',
-      apiKey: 'cloud-key',
+      providerId: 'alidocmind',
+      accessKeyId: 'ak',
+      accessKeySecret: 'sk',
     });
     const json = await res.json();
 

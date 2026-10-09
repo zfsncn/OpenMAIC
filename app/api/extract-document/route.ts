@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { NextRequest, NextResponse } from 'next/server';
 import {
   isServerConfiguredProvider,
@@ -16,12 +18,19 @@ import {
   selectDocumentExtractorProvider,
 } from '@/lib/document';
 import type { MediaArtifact } from '@/lib/document';
+import { isExtractionFailure } from '@/lib/document/extraction-failure';
+import type { ExtractionProgress } from '@/lib/document/types';
+import {
+  archiveExtractionBestEffort,
+  readArchivedExtractionResponseBestEffort,
+} from '@/lib/document/extraction-archive';
 import { normalizeDocumentMimeType, SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
 import {
   resolveServerAsset,
   type ServerAssetResolution,
 } from '@/lib/persistence/resolve-server-asset';
+import { resolveRequestOwner } from '@/lib/server/identity/resolve';
 import { attachOwnerCookies } from '@/lib/server/identity/with-owner';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
@@ -35,6 +44,26 @@ import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation
 export const runtime = 'nodejs';
 
 const log = createLogger('Extract Document');
+
+/**
+ * The media type a client names in `Accept` to get the streamed response:
+ * newline-delimited JSON, zero or more `progress` records followed by one
+ * `result` record. Opt-in on purpose — a client that does not ask for it keeps
+ * receiving exactly the single JSON body this route has always returned, so
+ * the route learning a second way to answer changes nothing for anything
+ * already calling it.
+ */
+const EXTRACTION_STREAM_MEDIA_TYPE = 'application/x-ndjson';
+
+/** How a running extraction reports itself, and how a caller resumes one. */
+interface ExtractionHooks {
+  onProgress?: (progress: ExtractionProgress) => void;
+  /**
+   * An opaque handle for a job an earlier attempt already submitted. Only the
+   * extractor that issued it can honour it; every other extractor ignores it.
+   */
+  resumeToken?: string;
+}
 
 /**
  * A normalized extraction input, independent of how the bytes arrived: either
@@ -63,6 +92,8 @@ interface AssetIdExtractRequest extends ExtractRequestConfig {
   assetId?: string;
   fileName?: string;
   mimeType?: string;
+  /** Resume handle for a job an earlier attempt already submitted. */
+  resumeToken?: string;
 }
 
 /** String-only fields the JSON path accepts; wrong types are a 400, not a 500. */
@@ -74,6 +105,7 @@ const ASSET_ID_EXTRACT_STRING_FIELDS = [
   'baseUrl',
   'accessKeyId',
   'accessKeySecret',
+  'resumeToken',
 ] as const;
 
 /** Mutable logging context shared with the shared extraction helper. */
@@ -131,33 +163,6 @@ function validateJsonPathProvider(
     );
   }
   return null;
-}
-
-function isSelfHostedMinerUProvider(
-  providerId: string,
-): providerId is Extract<PDFProviderId, 'mineru'> {
-  return providerId === 'mineru';
-}
-
-/**
- * Operator opt-in for the MinerU Cloud fallback (default OFF). A self-hosted
- * MinerU deployment must never silently hand documents to a third-party cloud;
- * the MinerU Cloud fallback only happens when the operator explicitly enables
- * it with `ALLOW_MINERU_CLOUD_FALLBACK=true`.
- */
-function isMinerUCloudFallbackEnabled(): boolean {
-  const value = process.env.ALLOW_MINERU_CLOUD_FALLBACK;
-  return value === 'true' || value === '1';
-}
-
-function requestedTypeLabel(mimeType: string): string {
-  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    return 'DOCX';
-  }
-  if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
-    return 'PPTX';
-  }
-  return mimeType;
 }
 
 /**
@@ -219,21 +224,41 @@ function formatTimestamp(ms: number): string {
  * `isAssetIdForm` only switches the handful of messages that must stay generic
  * on the asset-id form (no caller-controlled text echoed); multipart keeps its
  * exact current messages.
+ *
+ * `extractionOwnerId` is the resolved owner when this deployment keeps the
+ * derivation archive (`lib/persistence/material-extraction.ts`); absent means
+ * no archive — either the deployment has no database or the request resolved
+ * no owner. It is passed in rather than resolved here so both request forms
+ * share one resolution, and so this function stays free of identity concerns.
+ *
+ * `hooks` carries what only this run can produce: progress while it is still
+ * running, and the resume handle of the job it is working on. Both are
+ * optional and both are simply forwarded to the extractor — a provider that
+ * cannot report progress or resume a job ignores them, which is why no branch
+ * here is needed to tell the two kinds of provider apart.
  */
 async function runExtraction(
   source: ExtractSource,
   requestConfig: ExtractRequestConfig,
   logState: ExtractLogState,
   isAssetIdForm: boolean,
+  extractionOwnerId: string | undefined,
+  hooks: ExtractionHooks = {},
 ) {
   const { fileName, fileSize, mimeType, buffer } = source;
+  // Hash the bytes once, and only when something will store them: the digest is
+  // the stable half of the derivation key (the extractor identity is the other
+  // half), so it is computed from the original bytes and never from a guess.
+  const contentDigest = extractionOwnerId
+    ? createHash('sha256').update(buffer).digest('hex')
+    : undefined;
 
   // Media (audio/video) takes the media extraction path → MediaArtifact,
   // flattened to the same text shape documents produce. Same route, same
   // downstream generation path.
   if (SUPPORTED_MEDIA_MIME_TYPES.includes(mimeType)) {
     logState.resolvedProviderId = requestConfig.providerId || '';
-    // Reject a document-only provider (e.g. unpdf/mineru) for a media upload
+    // Reject a document-only provider (e.g. unpdf/alidocmind) for a media upload
     // with a clear 4xx instead of forwarding it into the media registry and
     // surfacing an opaque 500.
     const mediaProvider = requestConfig.providerId
@@ -248,6 +273,21 @@ async function runExtraction(
         400,
         `Provider "${requestConfig.providerId}" cannot extract ${mimeType}. Choose a media-capable provider (AliDocMind or local ffmpeg).`,
       );
+    }
+    // Derivation-cache read, conservatively: only a request that named a media
+    // extractor the registry knows about has an identity that can be named
+    // BEFORE extraction. Without one the provider is auto-selected from the
+    // request's MIME type and its runtime availability, and a key guessed here
+    // could serve a different provider's transcript — so the read is skipped
+    // and the parse runs (the result is still archived below).
+    if (extractionOwnerId && contentDigest && mediaProvider) {
+      const cached = await readArchivedExtractionResponseBestEffort({
+        ownerId: extractionOwnerId,
+        contentDigest,
+        extractorId: mediaProvider.id,
+        extractorVersion: mediaProvider.version,
+      });
+      if (cached) return apiSuccess({ data: cached });
     }
     const mediaManaged =
       requestConfig.providerId !== 'local-ffmpeg' &&
@@ -314,6 +354,25 @@ async function runExtraction(
         parser: mediaArtifact.metadata.providerId ?? logState.resolvedProviderId,
       },
     };
+    // The effective media extractor is the one that reported the artifact, not
+    // the one the request named: an auto-selected or substituted provider must
+    // key its own derivation. No registry entry means no declared version, and
+    // an unversioned key would silently collide across output changes, so the
+    // archive is skipped instead of guessed.
+    const effectiveMediaId = mediaArtifact.metadata.providerId ?? logState.resolvedProviderId;
+    const mediaExtractorVersion = getMediaExtractorProvider(effectiveMediaId)?.version;
+    if (extractionOwnerId && contentDigest && mediaExtractorVersion) {
+      await archiveExtractionBestEffort({
+        ownerId: extractionOwnerId,
+        contentDigest,
+        extractorId: effectiveMediaId,
+        extractorVersion: mediaExtractorVersion,
+        byteSize: fileSize,
+        fileName,
+        mimeType,
+        result: mediaResult,
+      });
+    }
     return apiSuccess({ data: mediaResult });
   }
 
@@ -355,38 +414,23 @@ async function runExtraction(
   }
   logState.resolvedProviderId = provider.id;
 
-  let managed = isPdfProviderId(provider.id) && isServerConfiguredProvider('pdf', provider.id);
+  const managed = isPdfProviderId(provider.id) && isServerConfiguredProvider('pdf', provider.id);
   let clientBaseUrl = managed ? undefined : requestConfig.baseUrl || undefined;
-  if (isSelfHostedMinerUProvider(provider.id) && !managed && !clientBaseUrl) {
-    const cloudProvider = getDocumentExtractorProvider('mineru-cloud');
-    const cloudManaged = isServerConfiguredProvider('pdf', 'mineru-cloud');
-    const cloudApiKey = resolvePDFApiKey(
-      'mineru-cloud',
-      cloudManaged ? undefined : requestConfig.apiKey || undefined,
-    );
-    const cloudFallbackAvailable =
-      cloudProvider && supportsMimeType(cloudProvider, mimeType) && cloudApiKey;
-    // A self-hosted extractor must never silently substitute a third-party
-    // cloud: the MinerU Cloud fallback happens only under an explicit operator
-    // opt-in (ALLOW_MINERU_CLOUD_FALLBACK, default OFF). Otherwise the request
-    // fails loudly, naming what was configured (self-hosted MinerU) and what
-    // was unavailable (its base URL).
-    if (cloudFallbackAvailable && isMinerUCloudFallbackEnabled()) {
-      provider = cloudProvider;
-      managed = cloudManaged;
-      clientBaseUrl = managed ? undefined : requestConfig.baseUrl || undefined;
-      logState.resolvedProviderId = provider.id;
-    } else {
-      return apiError(
-        'INVALID_REQUEST',
-        422,
-        `${requestedTypeLabel(mimeType)} extraction requires a configured MinerU document extractor. ` +
-          `Self-hosted MinerU was selected, but no self-hosted MinerU base URL is configured, so it is ` +
-          `unavailable. Documents are not sent to MinerU Cloud automatically: configure a self-hosted MinerU ` +
-          `base URL in PDF provider settings, or set ALLOW_MINERU_CLOUD_FALLBACK=1 to explicitly allow the ` +
-          `MinerU Cloud fallback.`,
-      );
-    }
+  // Derivation-cache read, and deliberately BEFORE the endpoint check below:
+  // `provider` is final here (auto-selection has already run), and a hit must
+  // not depend on the extractor's endpoint being reachable — that is the whole
+  // point of the archive. An extractor endpoint that was configured when these
+  // bytes were parsed and is unreachable today still answers from its own
+  // earlier result, and no request is made to the client-supplied URL, so
+  // skipping its validation takes nothing away.
+  if (extractionOwnerId && contentDigest) {
+    const cached = await readArchivedExtractionResponseBestEffort({
+      ownerId: extractionOwnerId,
+      contentDigest,
+      extractorId: provider.id,
+      extractorVersion: provider.version,
+    });
+    if (cached) return apiSuccess({ data: cached });
   }
   if (clientBaseUrl) {
     const checked = await checkClientDocumentExtractorBaseUrl(provider.id, clientBaseUrl);
@@ -426,6 +470,8 @@ async function runExtraction(
     fileSize,
     mimeType,
     config,
+    ...(hooks.onProgress ? { onProgress: hooks.onProgress } : {}),
+    ...(hooks.resumeToken ? { resumeToken: hooks.resumeToken } : {}),
   });
   const result = documentArtifactToParsedPdfContent(artifact);
 
@@ -441,7 +487,152 @@ async function runExtraction(
     },
   };
 
+  // `provider` here is the extractor that actually ran — post auto-selection —
+  // so its id and version are the
+  // authoritative identity half of the derivation key. The extractor's own
+  // reported `metadata.parser` is NOT used for this: it is self-reported and
+  // at least one provider reports a fixed label regardless of which backend
+  // served the request.
+  if (extractionOwnerId && contentDigest) {
+    await archiveExtractionBestEffort({
+      ownerId: extractionOwnerId,
+      contentDigest,
+      extractorId: provider.id,
+      extractorVersion: provider.version,
+      byteSize: fileSize,
+      fileName,
+      mimeType,
+      result: resultWithMetadata,
+    });
+  }
+
   return apiSuccess({ data: resultWithMetadata });
+}
+
+/**
+ * Whether this request asked for the streamed response. Only an explicit
+ * `Accept` for the streamed media type counts, so the single-body form stays
+ * the default even for a caller that sends no `Accept` at all.
+ */
+function acceptsExtractionStream(req: NextRequest): boolean {
+  return (req.headers.get('accept') ?? '').includes(EXTRACTION_STREAM_MEDIA_TYPE);
+}
+
+/**
+ * The caller's resume handle for an in-flight extraction, if it sent one.
+ *
+ * It is an opaque upstream id that downstream becomes one URL path segment, so
+ * it is bounded and character-checked here rather than escaped later. A value
+ * that does not fit is dropped, not refused: starting over is always a valid
+ * answer, and a malformed handle is not worth failing an otherwise good
+ * extraction request over.
+ */
+function readResumeToken(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9_-]{1,128}$/.test(trimmed) ? trimmed : undefined;
+}
+
+/**
+ * The response to a failed extraction, shared by the single-body form and the
+ * streamed one (whose last record carries this same body).
+ *
+ * A classified failure contributes two machine-readable fields: `reason` names
+ * the failure kind, and `details` carries the handle for resuming the job the
+ * failure belongs to. A client uses the first to pick a localized, actionable
+ * message and the second to offer continuing the job rather than starting it
+ * over. Everything else keeps each form's existing behavior — the byte form
+ * relays the extractor's own message, and the asset-id form answers a fixed
+ * generic one because it must not echo server internals.
+ */
+function failureResponse(
+  error: unknown,
+  logState: ExtractLogState,
+  isAssetIdForm: boolean,
+): NextResponse {
+  log.error(
+    `Document extraction failed [provider=${logState.resolvedProviderId ?? 'unknown'}, file="${sanitizeLogValue(
+      logState.fileName ?? 'unknown',
+    )}"]:`,
+    error,
+  );
+  const failure = isExtractionFailure(error) ? error : undefined;
+  if (isAssetIdForm) {
+    return apiError(
+      'PARSE_FAILED',
+      500,
+      'The course material could not be parsed. Please try again later.',
+      failure?.resumeToken,
+      failure?.kind,
+    );
+  }
+  return apiError(
+    'PARSE_FAILED',
+    500,
+    error instanceof Error ? error.message : 'Unknown error',
+    failure?.resumeToken,
+    failure?.kind,
+  );
+}
+
+/**
+ * Run an extraction whose answer is a newline-delimited JSON stream: zero or
+ * more `progress` records, then exactly one `result` record whose `body` is
+ * the same JSON the single-body form would have returned.
+ *
+ * The status line is always 200, and that is the protocol's one real cost: a
+ * failure cannot be signalled by the status, because the status is already on
+ * the wire by the time the extraction can fail. It rides the final record's
+ * `success: false` instead — which is the very thing the client already checks
+ * on the single-body form, so one reader consumes both.
+ *
+ * A client that disconnects mid-stream does not cancel the extraction. It must
+ * not: finishing is what archives the derivation server-side, so the run goes
+ * on and only the reporting stops.
+ */
+function streamExtraction(
+  context: { logState: ExtractLogState; isAssetIdForm: boolean },
+  run: (report: (progress: ExtractionProgress) => void) => Promise<Response>,
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let open = true;
+      const send = (record: unknown) => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(record)}\n`));
+        } catch {
+          open = false;
+        }
+      };
+      try {
+        const response = await run((progress) => send({ type: 'progress', progress }));
+        send({ type: 'result', body: await response.json() });
+      } catch (error) {
+        send({
+          type: 'result',
+          body: await failureResponse(error, context.logState, context.isAssetIdForm).json(),
+        });
+      } finally {
+        open = false;
+        try {
+          controller.close();
+        } catch {
+          // The stream was cancelled; there is nothing to close.
+        }
+      }
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'Content-Type': EXTRACTION_STREAM_MEDIA_TYPE,
+      'Cache-Control': 'no-store',
+      // A proxy that buffers by default would defeat the point of streaming.
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -463,6 +654,10 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
   // form's observable behavior is frozen; a few JSON-path-only responses use
   // this to stay generic (no caller input or raw extractor text echoed).
   let isAssetIdForm = false;
+  // Whether this request asked for the streamed answer instead of a single
+  // body, and the resume handle it offered, if any.
+  const streaming = acceptsExtractionStream(req);
+  let resumeToken: string | undefined;
   try {
     const contentType = req.headers.get('content-type') || '';
     let source: ExtractSource;
@@ -474,6 +669,7 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
       // browser-side asset.
       const formData = await req.formData();
       const documentFile = (formData.get('file') || formData.get('pdf')) as File | null;
+      resumeToken = readResumeToken(formData.get('resumeToken'));
       requestConfig = {
         providerId: (formData.get('providerId') as string | null) ?? undefined,
         apiKey: (formData.get('apiKey') as string | null) ?? undefined,
@@ -643,6 +839,7 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
         accessKeyId: body.accessKeyId,
         accessKeySecret: body.accessKeySecret,
       };
+      resumeToken = readResumeToken(body.resumeToken);
     } else {
       log.error('Invalid Content-Type for document upload:', contentType);
       return apiError(
@@ -652,25 +849,60 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
       );
     }
 
-    return await runExtraction(source, requestConfig, logState, isAssetIdForm);
-  } catch (error) {
-    log.error(
-      `Document extraction failed [provider=${logState.resolvedProviderId ?? 'unknown'}, file="${sanitizeLogValue(
-        logState.fileName ?? 'unknown',
-      )}"]:`,
-      error,
-    );
-    if (isAssetIdForm) {
-      // The asset-id form must not leak raw extractor internals to the caller
-      // (a provider outage, a malformed upstream response, …); answer a fixed
-      // generic message. Multipart keeps its current behavior exactly.
-      return apiError(
-        'PARSE_FAILED',
-        500,
-        'The course material could not be parsed. Please try again later.',
+    const extractionOwnerId = await resolveExtractionOwnerId(req, ownerCookies);
+    const hooks: ExtractionHooks = { ...(resumeToken ? { resumeToken } : {}) };
+    if (streaming) {
+      // The stream is the response: the extraction runs inside it, reporting
+      // as it goes and writing its outcome (success or failure) into the final
+      // record, because by then the status line has already been sent.
+      return streamExtraction({ logState, isAssetIdForm }, (report) =>
+        runExtraction(source, requestConfig, logState, isAssetIdForm, extractionOwnerId, {
+          ...hooks,
+          onProgress: report,
+        }),
       );
     }
-    return apiError('PARSE_FAILED', 500, error instanceof Error ? error.message : 'Unknown error');
+    return await runExtraction(
+      source,
+      requestConfig,
+      logState,
+      isAssetIdForm,
+      extractionOwnerId,
+      hooks,
+    );
+  } catch (error) {
+    return failureResponse(error, logState, isAssetIdForm);
+  }
+}
+
+/**
+ * Resolve the owner whose derivation archive this extraction belongs to.
+ *
+ * Deliberately best-effort, and best-effort for a specific reason: extraction
+ * has never required an owner, and it must not start to. A deployment whose
+ * anonymous fallback is off, or whose identity resolution fails, still gets
+ * the parse it asked for — it simply gets no archive row. The multipart byte
+ * form is what makes this rule necessary: the asset-id form already answers
+ * 401 when it cannot resolve an owner, but multipart is the browser-backed
+ * path and has always worked without one.
+ *
+ * The resolution is the request's own (memoized in `resolveRequestOwner`), so
+ * the asset-id form's earlier resolution is reused rather than repeated, and
+ * any cookies it minted ride the response exactly as before.
+ */
+async function resolveExtractionOwnerId(
+  req: NextRequest,
+  ownerCookies: OwnerCookies,
+): Promise<string | undefined> {
+  if (!process.env.DATABASE_URL?.trim()) return undefined;
+  try {
+    const outcome = await resolveRequestOwner(req);
+    if (!outcome.ok) return undefined;
+    if (outcome.setCookies?.length) ownerCookies.setCookies = outcome.setCookies;
+    return outcome.principal.ownerId;
+  } catch (error) {
+    log.warn('Could not resolve the owner for the extraction archive:', error);
+    return undefined;
   }
 }
 
