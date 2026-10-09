@@ -8,7 +8,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { EditorCommand, SurfaceHistory } from '@/lib/edit/scene-editor-surface';
-import { classroomExitLabelKey, exitClassroom } from '@/lib/workbench/classroom-exit';
+import {
+  classroomExitLabelKey,
+  exitClassroom,
+  resolveClassroomExit,
+} from '@/lib/workbench/classroom-exit';
+import { resetHomeComposer } from '@/lib/home/composer-reset';
 
 interface CommandBarProps {
   readonly title: string;
@@ -47,7 +52,14 @@ export function CommandBar({ title, history, commands, trailing }: CommandBarPro
         <IconButton
           title={exitLabel}
           aria-label={exitLabel}
-          onClick={() => exitClassroom(router, searchParams)}
+          onClick={() => {
+            // Only a return to the *home page* resets the composer. A
+            // workbench-attached classroom exits to `/workspace`, which has no
+            // composer of its own, so resetting there would clear a prompt the
+            // user never left.
+            if (resolveClassroomExit({ searchParams }).href === '/') resetHomeComposer();
+            exitClassroom(router, searchParams);
+          }}
         >
           <ArrowLeft className="h-4 w-4" />
         </IconButton>

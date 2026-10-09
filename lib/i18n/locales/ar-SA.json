@@ -11,7 +11,28 @@
   },
   "home": {
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
-    "greetingWithName": "مرحبًا، {{name}}"
+    "greetingWithName": "مرحبًا، {{name}}",
+    "usageGuide": {
+      "title": "ثلاث طرق للبدء",
+      "openLabel": "دليل الاستخدام",
+      "collapseLabel": "طي الدليل",
+      "expandLabel": "توسيع الدليل",
+      "steps": {
+        "noText": {
+          "title": "بدون مادة دراسية",
+          "desc": "اكتب ما تريد تعلّمه، ثم اضغط «دخول الفصل» وانتظر حتى تُنشئ الوكلاء شرائح الدرس."
+        },
+        "withMaterial": {
+          "title": "ارفع مادة دراسية وأنشئ مقررًا",
+          "desc": "اضغط «مجلد جديد» وسمِّ المقرر → ارفع المادة عبر مشبك الورق → تظهر قائمة الفصول على اليسار؛ اختر ملفًا فتُضيء الأزرار ثم اختر أحدها."
+        },
+        "existing": {
+          "title": "افتح مقررًا موجودًا",
+          "desc": "اضغط على مجلد مقرر مثل «舆情学» (إذا لم يظهر، أعد تحميل المتصفح) → تظهر قائمة الفصول على اليسار؛ اختر فصلًا فتُضيء الأزرار ثم اختر أحدها."
+        }
+      },
+      "apiKeyNote": "تم إعداد مفتاح LLM API مسبقًا. عند حدوث خطأ، اضغط ⚙ في أعلى اليمين لتعيين مفتاح صالح."
+    }
   },
   "toolbar": {
     "pdfParser": "محلل PDF",
@@ -22,6 +43,8 @@
     "courseMaterialsSelected": "تم تحديد {{n}} مواد",
     "courseMaterialMergeOrder": "سيتم دمج المواد بالترتيب المعروض أدناه.",
     "removeCourseMaterial": "إزالة الملف",
+    "removeCourseMaterialConfirmTitle": "إزالة مادة المقرر",
+    "removeCourseMaterialConfirmMessage": "هل تريد إزالة {{name}}؟ ستحتاج إلى إعادة تحميله لاستعادته.",
     "webSearchOn": "مُفعّل",
     "webSearchOff": "انقر للتفعيل",
     "webSearchDesc": "البحث في الإنترنت عن معلومات محدّثة قبل التوليد",
@@ -32,6 +55,18 @@
     "configureProviderHint": "قم بتكوين مزوّد نماذج واحد على الأقل لتوليد المقررات",
     "interactiveModeHint": "تفعيل وضع التفاعل_first للمحتوى العملي",
     "interactiveModeLabel": "وضع التفاعل",
+    "courseMaterialPanel": "مواد المقرر",
+    "selectedChapterBadge": "تم تحديد الفصل {{n}}",
+    "selectChapter": "تحديد هذا الفصل",
+    "chapterRequirementTemplate": "ابدأ الدرس: {{order}} {{title}}",
+    "chapterDirectory": "فصول المقرر",
+    "chapterDirectoryCollapse": "طي الفصول",
+    "chapterDirectoryExpand": "توسيع الفصول",
+    "chapterMergeHint": "اختر فصلاً واحدًا لإنشاء درس مخصص له، أو اترك الكل دون تحديد لدمج جميع المواد (السلوك الحالي).",
+    "chapterDirectoryEmpty": "لا توجد مواد فصول في هذا المجلد بعد.",
+    "chapterDirectoryEmptyHint": "ارفع ملفًا أثناء فتح هذا المجلد وسيظهر هنا.",
+    "chapterFileMissing": "الملف غير موجود على هذا الجهاز — أعد تحديده لاستخدام هذا الفصل",
+    "chapterFileMissingNamed": "الملف {{name}} غير موجود على هذا الجهاز. أعد تحديد الملف للمتابعة.",
     "enterClassroom": "دخول الفصل",
     "advancedSettings": "إعدادات متقدمة",
     "thinking": "التفكير",
@@ -44,7 +79,11 @@
     "ttsTitle": "تحويل النص إلى كلام",
     "ttsHint": "اختر صوتًا للمعلم الذكي",
     "ttsPreview": "معاينة",
-    "ttsPreviewing": "جارٍ التشغيل..."
+    "ttsPreviewing": "جارٍ التشغيل...",
+    "unitQuizRequirement": "أنشئ اختبار وحدة يغطي النقاط الرئيسية في {{name}}.",
+    "caseTeachingRequirement": "أنشئ درسًا دراسيًا لحالة عملية استنادًا إلى النقاط المعرفية الرئيسية في {{name}}.",
+    "unitQuiz": "اختبار الوحدة",
+    "caseTeaching": "التدريس بالحالات"
   },
   "export": {
     "pptx": "تصدير PPTX",
@@ -716,7 +755,26 @@
     "aiGrading": "الذكاء الاصطناعي يصحح...",
     "aiGradingWait": "يرجى الانتظار، جارٍ تحليل إجاباتك",
     "quizReport": "تقرير الاختبار",
-    "retry": "إعادة المحاولة"
+    "retry": "إعادة المحاولة",
+    "changeSet": "مجموعة جديدة",
+    "changeSetFailed": "تعذّر إنشاء مجموعة جديدة. يرجى المحاولة مرة أخرى"
+  },
+  "case": {
+    "title": "دراسة حالة",
+    "knowledgePoints": "النقاط المعرفية للفصل",
+    "sources": "المصادر",
+    "noSources": "لا توجد مصادر: كُتبت هذه الحالة اعتمادًا على معرفة عامة، لا على واقعة موثّقة.",
+    "discussion": "أسئلة للنقاش",
+    "analysis": "تحليل الحالة",
+    "analysisAction": "تحليل الحالة",
+    "analysisBusy": "جارٍ إنشاء التحليل…",
+    "analysisHint": "يربط الحالة بنقاط معرفة الفصل واحدة تلو الأخرى.",
+    "analysisFailed": "تعذّر إنشاء التحليل. يرجى المحاولة مرة أخرى.",
+    "hideAnalysis": "إخفاء التحليل",
+    "changeCase": "تغيير الحالة",
+    "changeCaseBusy": "جارٍ البحث عن حالة أخرى…",
+    "changeCaseFailed": "تعذّر تغيير الحالة. يرجى المحاولة مرة أخرى.",
+    "variantBadge": "الحالة {{index}} / {{total}}"
   },
   "roundtable": {
     "teacher": "المعلم",
@@ -1030,9 +1088,12 @@
     "requirementPlaceholder": "أخبرني بأي شيء تريد تعلمه، مثلاً:\n\"علمني بايثون من الصفر في 30 دقيقة\"\n\"اشرح تحويل فورييه على السبورة\"\n\"كيف تلعب لعبة أفالون\"",
     "requirementRequired": "يرجى إدخال متطلبات المقرر",
     "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
-    "courseMaterialCountLimit": "يمكنك رفع ما يصل إلى 5 ملفات لمواد المقرر",
-    "courseMaterialTotalSizeLimit": "يجب أن يكون الحجم الإجمالي لمواد المقرر أقل من 150 ميغابايت",
-    "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر."
+    "courseMaterialCountLimit": "يمكنك رفع ما يصل إلى {{n}} ملفات لمواد المقرر",
+    "courseMaterialTotalSizeLimit": "يجب أن يكون الحجم الإجمالي لمواد المقرر أقل من {{n}} ميغابايت",
+    "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر.",
+    "someFilesSkipped": "تم تخطي {{n}} ملف لا يدعمه المستخرج الحالي",
+    "existingClassroomOpened": "هذه المادة لها درس موجود بالفعل — جارٍ فتحه",
+    "existingClassroomExtracting": "هذه المادة لها درس موجود بالفعل — جارٍ إكمال التحليل ثم الفتح"
   },
   "generation": {
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
@@ -1040,7 +1101,16 @@
     "analyzingCourseMaterial": "تحليل المستندات",
     "analyzingCourseMaterialDesc": "جارٍ استخراج هيكل المستند ومحتواه...",
     "courseMaterialLoadFailed": "فشل تحميل مادة المقرر، يرجى المحاولة مرة أخرى",
+    "courseMaterialNotArchived": "{{name}} غير موجود على هذا الجهاز، ولم يتم العثور على نسخة محفوظة من محتواه. يرجى رفع الملف مرة أخرى.",
     "courseMaterialParseFailed": "فشل تحليل مادة المقرر",
+    "courseMaterialExtractProgress": "جارٍ تحليل {{name}} — الصفحة {{done}}/{{total}}…",
+    "courseMaterialExtractProgressPercent": "جارٍ تحليل {{name}} — اكتمل {{percent}}%…",
+    "courseMaterialExtractWaiting": "جارٍ تحليل {{name}} — في انتظار خدمة التحليل…",
+    "courseMaterialExtractResuming": "جارٍ استئناف التحليل السابق لـ {{name}}…",
+    "courseMaterialExtractFailedTimeout": "انتهت مهلة التحليل: لم تُرجع خدمة التحليل نتيجة في الوقت المحدد. إعادة رفع الملف نفسه تستأنف هذه المهمة بدلًا من البدء من جديد.",
+    "courseMaterialExtractFailedUnavailable": "خدمة التحليل غير متاحة مؤقتًا. يُرجى المحاولة لاحقًا.",
+    "courseMaterialExtractFailedQuota": "رفضت خدمة التحليل الطلب: لقد نفدت حصة التحليل في الحساب.",
+    "courseMaterialExtractFailedAuth": "رفضت خدمة التحليل بيانات الاعتماد. تحقق من مفتاح API في الإعدادات.",
     "streamNotReadable": "تعذرت قراءة تدفق التوليد",
     "generatingOutlines": "صياغة مخطط المقرر",
     "generatingOutlinesDesc": "جارٍ هيكلة مسار التعلم...",
@@ -1086,6 +1156,7 @@
     "sceneTypeQuiz": "اختبار",
     "sceneTypeInteractive": "تفاعلي",
     "sceneTypePbl": "تعلم قائم على المشاريع",
+    "sceneTypeCase": "دراسة حالة",
     "sceneDescriptionPlaceholder": "صف هدف هذا المشهد ومحتواه بإيجاز",
     "quizQuestionCount": "عدد الأسئلة",
     "quizDifficulty": "الصعوبة",
@@ -1143,7 +1214,9 @@
     "webSearchFailed": "فشل البحث في الإنترنت",
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
-    "analyzingMediaMaterial": "تحليل الصوت/الفيديو"
+    "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
+    "caseResearching": "جارٍ البحث عن مواد الحالة",
+    "caseResearchingDesc": "البحث عن أحداث واقعية لهذا الفصل"
   },
   "settings": {
     "title": "الإعدادات",
@@ -1408,7 +1481,6 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (فولكينجين)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
-    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (محلي)",
     "providerBrowserNativeTTS": "تحويل النص إلى كلام المدمج في المتصفح",
     "voxcpmBackend": "الخلفية",
@@ -1461,7 +1533,6 @@
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
     "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
-    "ttsSpeedUnsupported": "This provider does not support speed adjustment.",
     "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
     "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
     "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
@@ -1472,8 +1543,6 @@
     "providerLemonadeASR": "Lemonade ASR (محلي)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (مُدمج)",
-    "providerMinerU": "MinerU",
-    "providerMinerUCloud": "MinerU (السحابي)",
     "browserNativeTTSNote": "TTS المُدمج في المتصفح لا يحتاج تكوينًا وهو مجاني تمامًا، يستخدم أصوات النظام المُدمجة",
     "testTTS": "اختبار TTS",
     "testASR": "اختبار ASR",
@@ -1690,22 +1759,12 @@
     "pdfSettings": "تحليل PDF",
     "documentParsingSettings": "تحليل المستندات",
     "supportedFormats": "الصيغ المدعومة",
-    "mineruSelfHostFormatsNote": "يتطلب تحليل ملفات PDF والصور تثبيت الإضافات mineru[pipeline] أو mineru[core] على خادم MinerU. قد تدعم عمليات تثبيت mineru-api الخفيفة مستندات Office فقط.",
     "pdfParsingSettings": "إعدادات تحليل PDF",
     "pdfDescription": "اختر محرك تحليل PDF مع دعم استخراج النص ومعالجة الصور والتعرف على الجداول",
     "pdfProvider": "محلل PDF",
     "pdfFeatures": "الميزات المدعومة",
     "pdfApiKey": "مفتاح API",
     "pdfBaseUrl": "العنوان الأساسي",
-    "mineruDescription": "MinerU هي خدمة تحليل PDF تجارية تدعم ميزات متقدمة مثل استخراج الجداول والتعرف على المعادلات وتحليل التخطيط.",
-    "mineruApiKeyRequired": "تحتاج إلى التقدم للحصول على مفتاح API من موقع MinerU قبل الاستخدام.",
-    "mineruWarning": "تحذير",
-    "mineruCostWarning": "MinerU خدمة تجارية وقد تتكبد رسومًا. يرجى مراجعة موقع MinerU لتفاصيل الأسعار.",
-    "enterMinerUApiKey": "أدخل مفتاح API لـ MinerU",
-    "mineruLocalDescription": "يدعم MinerU النشر المحلي مع تحليل PDF متقدم (جداول، معادلات، تحليل تخطيط). يتطلب نشر خدمة MinerU أولاً.",
-    "mineruServerAddress": "عنوان خادم MinerU المحلي (مثلاً، http://localhost:8080)",
-    "mineruApiKeyOptional": "مطلوب فقط إذا كان الخادم يتطلب مصادقة",
-    "mineruCloudApiKeyPlaceholder": "أدخل مفتاح MinerU Cloud API",
     "optionalApiKey": "مفتاح API اختياري",
     "featureText": "استخراج النص",
     "featureImages": "استخراج الصور",

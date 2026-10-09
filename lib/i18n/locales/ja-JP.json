@@ -11,7 +11,28 @@
   },
   "home": {
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
-    "greetingWithName": "こんにちは、{{name}}さん"
+    "greetingWithName": "こんにちは、{{name}}さん",
+    "usageGuide": {
+      "title": "3つの始め方",
+      "openLabel": "使い方",
+      "collapseLabel": "ガイドを閉じる",
+      "expandLabel": "ガイドを開く",
+      "steps": {
+        "noText": {
+          "title": "教材なしで始める",
+          "desc": "入力欄に学びたい内容を書き、「教室に入る」をクリックすると、エージェントが教材スライドを生成します。"
+        },
+        "withMaterial": {
+          "title": "教材をアップロードして講座を作る",
+          "desc": "「新規フォルダ」をクリックして講座名を入力 → クリップで教材をアップロード → 左側に章の一覧が表示され、ファイルを選ぶとボタンが有効になります。いずれかを選んで開始してください。"
+        },
+        "existing": {
+          "title": "既存の講座を開く",
+          "desc": "「舆情学」などの講座フォルダをクリック（一覧が表示されない場合はブラウザを再読み込み）→ 左側に章の一覧が表示されます。章を選ぶとボタンが有効になるので、いずれかを選んでください。"
+        }
+      },
+      "apiKeyNote": "LLM API キーは設定済みです。エラーが出た場合は右上の ⚙ から有効なキーを設定してください。"
+    }
   },
   "toolbar": {
     "pdfParser": "パーサー",
@@ -22,6 +43,8 @@
     "courseMaterialsSelected": "{{n}}件の教材を選択済み",
     "courseMaterialMergeOrder": "教材は下に表示された順序で結合されます。",
     "removeCourseMaterial": "ファイルを削除",
+    "removeCourseMaterialConfirmTitle": "教材を削除",
+    "removeCourseMaterialConfirmMessage": "「{{name}}」を削除しますか？削除後は再度アップロードしないと復元できません。",
     "webSearchOn": "有効",
     "webSearchOff": "クリックして有効化",
     "webSearchDesc": "生成前にウェブ検索で最新情報を取得します",
@@ -44,7 +67,23 @@
     "ttsPreview": "プレビュー",
     "ttsPreviewing": "再生中...",
     "interactiveModeHint": "インタラクティブ優先モードを有効にして、より実践的なコンテンツを生成",
-    "interactiveModeLabel": "インタラクティブモード"
+    "interactiveModeLabel": "インタラクティブモード",
+    "courseMaterialPanel": "教材",
+    "selectedChapterBadge": "第{{n}}章を選択中",
+    "selectChapter": "この章を選択",
+    "chapterRequirementTemplate": "{{order}} {{title}} の授業を始める",
+    "chapterDirectory": "コースの章",
+    "chapterDirectoryCollapse": "章を折りたたむ",
+    "chapterDirectoryExpand": "章を展開する",
+    "chapterMergeHint": "1つの章を選ぶとその章だけを対象に生成します。未選択の場合は全教材を結合します（従来どおり）。",
+    "chapterDirectoryEmpty": "このフォルダにはまだ章の資料がありません。",
+    "chapterDirectoryEmptyHint": "このフォルダを開いた状態でファイルをアップロードすると、ここに表示されます。",
+    "chapterFileMissing": "このデバイスにファイルがありません。選択し直すと使用できます",
+    "chapterFileMissingNamed": "{{name}} はこのデバイスにありません。ファイルを選択し直してください。",
+    "unitQuizRequirement": "{{name}}の章の重要ポイントを扱う単元テストを作成してください。",
+    "caseTeachingRequirement": "『{{name}}』の重要な知識点を題材に、ケーススタディ授業を生成します。",
+    "unitQuiz": "単元テスト",
+    "caseTeaching": "ケース教材"
   },
   "export": {
     "pptx": "PPTXエクスポート",
@@ -716,7 +755,26 @@
     "aiGrading": "AIが採点中...",
     "aiGradingWait": "回答を分析しています。お待ちください",
     "quizReport": "クイズレポート",
-    "retry": "やり直す"
+    "retry": "やり直す",
+    "changeSet": "別の問題",
+    "changeSetFailed": "新しい問題を生成できませんでした。もう一度お試しください"
+  },
+  "case": {
+    "title": "ケーススタディ",
+    "knowledgePoints": "本章の知識点",
+    "sources": "出典",
+    "noSources": "出典なし：このケースは検証済みの報道ではなく、一般的な知識に基づいて作成されています。",
+    "discussion": "討論問題",
+    "analysis": "ケース分析",
+    "analysisAction": "ケースの解説",
+    "analysisBusy": "解説を生成しています…",
+    "analysisHint": "ケースを本章の知識点に一つずつ結びつけます",
+    "analysisFailed": "解説の生成に失敗しました。もう一度お試しください",
+    "hideAnalysis": "解説を隠す",
+    "changeCase": "別のケースにする",
+    "changeCaseBusy": "新しいケースを検索しています…",
+    "changeCaseFailed": "ケースの変更に失敗しました。もう一度お試しください",
+    "variantBadge": "ケース {{index}} / {{total}}"
   },
   "roundtable": {
     "teacher": "教師",
@@ -1030,9 +1088,12 @@
     "requirementPlaceholder": "学びたいことを自由に入力してください。例えば：\n「Pythonをゼロから30分で教えて」\n「フーリエ変換をホワイトボードで解説して」\n「ボードゲーム『アバロン』の遊び方」",
     "requirementRequired": "コースの要件を入力してください",
     "fileTooLarge": "ファイルが大きすぎます。50MB以下のファイルを選択してください",
-    "courseMaterialCountLimit": "教材ファイルは最大5件までアップロードできます",
-    "courseMaterialTotalSizeLimit": "教材の合計サイズは150MB未満にしてください",
-    "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。"
+    "courseMaterialCountLimit": "教材ファイルは最大{{n}}件までアップロードできます",
+    "courseMaterialTotalSizeLimit": "教材の合計サイズは{{n}}MB未満にしてください",
+    "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。",
+    "someFilesSkipped": "現在の解析器が対応していないファイルを{{n}}件スキップしました",
+    "existingClassroomOpened": "この教材には既に対応する授業があります。開いています",
+    "existingClassroomExtracting": "この教材には既に対応する授業があります。解析を補完してから開きます"
   },
   "generation": {
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
@@ -1040,7 +1101,16 @@
     "analyzingCourseMaterial": "ドキュメントを分析中",
     "analyzingCourseMaterialDesc": "ドキュメントの構造と内容を抽出しています...",
     "courseMaterialLoadFailed": "教材の読み込みに失敗しました。もう一度お試しください",
+    "courseMaterialNotArchived": "{{name}} はこのデバイスになく、保存された解析内容も見つかりませんでした。ファイルを再度アップロードしてください。",
     "courseMaterialParseFailed": "教材の解析に失敗しました",
+    "courseMaterialExtractProgress": "{{name}} を解析中（{{done}}/{{total}} ページ）…",
+    "courseMaterialExtractProgressPercent": "{{name}} を解析中（{{percent}}% 完了）…",
+    "courseMaterialExtractWaiting": "{{name}} を解析中（送信済み、解析サービスの処理待ち）…",
+    "courseMaterialExtractResuming": "以前の未完了の解析を再開しています（{{name}}）…",
+    "courseMaterialExtractFailedTimeout": "解析がタイムアウトしました。解析サービスが時間内に結果を返しませんでした。同じファイルを再アップロードすると、最初からではなくそのジョブを再開します。",
+    "courseMaterialExtractFailedUnavailable": "解析サービスが一時的に利用できません。しばらくしてから再試行してください。",
+    "courseMaterialExtractFailedQuota": "解析サービスの利用枠が不足しています。アカウントの解析枠を確認してください。",
+    "courseMaterialExtractFailedAuth": "解析サービスの認証情報が拒否されました。設定の API キーを確認してください。",
     "streamNotReadable": "生成ストリームを読み取れません",
     "generatingOutlines": "コースアウトラインを作成中",
     "generatingOutlinesDesc": "学習パスを構成しています...",
@@ -1086,6 +1156,7 @@
     "sceneTypeQuiz": "クイズ",
     "sceneTypeInteractive": "インタラクティブ",
     "sceneTypePbl": "PBL",
+    "sceneTypeCase": "ケーススタディ",
     "sceneDescriptionPlaceholder": "このシーンの目的と内容を簡潔に説明してください",
     "quizQuestionCount": "問題数",
     "quizDifficulty": "難易度",
@@ -1143,7 +1214,9 @@
     "webSearchFailed": "ウェブ検索に失敗しました",
     "outlinesReadyCount": "{{ready}} / {{total}} セクション準備完了",
     "jumpToBlankTitle": "タイトルが未入力のセクションへ移動",
-    "analyzingMediaMaterial": "音声・動画を解析中"
+    "analyzingMediaMaterial": "音声・動画を解析中",
+    "caseResearching": "ケース資料を検索中",
+    "caseResearchingDesc": "本章の知識点から実話を検索します"
   },
   "settings": {
     "title": "設定",
@@ -1408,7 +1481,6 @@
     "providerDoubaoTTS": "Doubao TTS 2.0（火山エンジン）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
-    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS（ローカル）",
     "providerBrowserNativeTTS": "ブラウザネイティブTTS",
     "voxcpmBackend": "バックエンド",
@@ -1461,7 +1533,6 @@
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
     "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
-    "ttsSpeedUnsupported": "This provider does not support speed adjustment.",
     "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
     "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
     "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
@@ -1472,8 +1543,6 @@
     "providerLemonadeASR": "Lemonade ASR（ローカル）",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（組み込み）",
-    "providerMinerU": "MinerU",
-    "providerMinerUCloud": "MinerU（クラウド）",
     "browserNativeTTSNote": "ブラウザネイティブTTSは設定不要で完全無料です。システム内蔵のボイスを使用します",
     "testTTS": "TTSをテスト",
     "testASR": "ASRをテスト",
@@ -1690,22 +1759,12 @@
     "pdfSettings": "PDF解析",
     "documentParsingSettings": "ドキュメント解析",
     "supportedFormats": "対応フォーマット",
-    "mineruSelfHostFormatsNote": "PDF と画像の解析には、MinerU サーバーに mineru[pipeline] または mineru[core] の追加依存関係が必要です。軽量版の mineru-api では Office 文書のみに対応する場合があります。",
     "pdfParsingSettings": "PDF解析設定",
     "pdfDescription": "テキスト抽出、画像処理、表認識に対応したPDF解析エンジンを選択",
     "pdfProvider": "PDFパーサー",
     "pdfFeatures": "対応機能",
     "pdfApiKey": "APIキー",
     "pdfBaseUrl": "ベースURL",
-    "mineruDescription": "MinerUは商用PDF解析サービスで、表抽出、数式認識、レイアウト分析などの高度な機能に対応しています。",
-    "mineruApiKeyRequired": "使用前にMinerUのウェブサイトでAPIキーを申請する必要があります。",
-    "mineruWarning": "注意",
-    "mineruCostWarning": "MinerUは商用サービスであり、料金が発生する場合があります。詳細はMinerUのウェブサイトで確認してください。",
-    "enterMinerUApiKey": "MinerU APIキーを入力",
-    "mineruLocalDescription": "MinerUはローカルデプロイに対応し、高度なPDF解析（表、数式、レイアウト分析）が可能です。事前にMinerUサービスのデプロイが必要です。",
-    "mineruServerAddress": "ローカルMinerUサーバーアドレス（例：http://localhost:8080）",
-    "mineruApiKeyOptional": "サーバーで認証が有効な場合のみ必要",
-    "mineruCloudApiKeyPlaceholder": "MinerU Cloud API キーを入力",
     "optionalApiKey": "APIキー（任意）",
     "featureText": "テキスト抽出",
     "featureImages": "画像抽出",

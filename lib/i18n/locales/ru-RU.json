@@ -11,7 +11,28 @@
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "greetingWithName": "Привет, {{name}}"
+    "greetingWithName": "Привет, {{name}}",
+    "usageGuide": {
+      "title": "Три способа начать",
+      "openLabel": "Как начать",
+      "collapseLabel": "Свернуть подсказку",
+      "expandLabel": "Развернуть подсказку",
+      "steps": {
+        "noText": {
+          "title": "Без учебных материалов",
+          "desc": "Напишите, что хотите изучить, нажмите «Войти в класс» и дождитесь, пока агенты создадут слайды."
+        },
+        "withMaterial": {
+          "title": "Загрузите материал и создайте курс",
+          "desc": "Нажмите «Новая папка» и назовите курс → загрузите материал скрепкой → слева появится список глав; выберите файл, кнопки станут активными — останется выбрать одну."
+        },
+        "existing": {
+          "title": "Открыть существующий курс",
+          "desc": "Нажмите на папку курса, например «舆情学» (если список пуст, обновите страницу) → слева появится список глав; выберите главу, кнопки станут активными — останется выбрать одну."
+        }
+      },
+      "apiKeyNote": "Ключ API LLM уже настроен. При ошибке задайте рабочий ключ через ⚙ справа вверху."
+    }
   },
   "toolbar": {
     "pdfParser": "Парсер",
@@ -22,6 +43,8 @@
     "courseMaterialsSelected": "Выбрано материалов: {{n}}",
     "courseMaterialMergeOrder": "Материалы объединяются в порядке, показанном ниже.",
     "removeCourseMaterial": "Удалить файл",
+    "removeCourseMaterialConfirmTitle": "Удаление материала",
+    "removeCourseMaterialConfirmMessage": "Удалить {{name}}? Чтобы восстановить файл, потребуется загрузить его снова.",
     "webSearchOn": "Включено",
     "webSearchOff": "Нажмите для включения",
     "webSearchDesc": "Поиск актуальной информации в интернете перед генерацией",
@@ -44,7 +67,23 @@
     "ttsPreview": "Прослушать",
     "ttsPreviewing": "Воспроизведение...",
     "interactiveModeHint": "Включить интерактивный режим для более практического контента",
-    "interactiveModeLabel": "Интерактивный режим"
+    "interactiveModeLabel": "Интерактивный режим",
+    "courseMaterialPanel": "Материалы курса",
+    "selectedChapterBadge": "Выбрана глава {{n}}",
+    "selectChapter": "Выбрать эту главу",
+    "chapterRequirementTemplate": "Начать занятие: {{order}} {{title}}",
+    "chapterDirectory": "Главы курса",
+    "chapterDirectoryCollapse": "Свернуть главы",
+    "chapterDirectoryExpand": "Развернуть главы",
+    "chapterMergeHint": "Выберите одну главу, чтобы сгенерировать занятие только по ней; если ничего не выбрано, все материалы объединяются (как раньше).",
+    "chapterDirectoryEmpty": "В этой папке пока нет материалов глав.",
+    "chapterDirectoryEmptyHint": "Загрузите файл, пока открыта эта папка, и он появится здесь.",
+    "chapterFileMissing": "Файла нет на этом устройстве — выберите его заново, чтобы использовать главу",
+    "chapterFileMissingNamed": "Файл {{name}} отсутствует на этом устройстве. Выберите его заново.",
+    "unitQuizRequirement": "Составьте проверочную работу по ключевым темам раздела «{{name}}».",
+    "caseTeachingRequirement": "Создайте занятие по разбору кейса на основе ключевых моментов из {{name}}.",
+    "unitQuiz": "Тест по модулю",
+    "caseTeaching": "Кейс-обучение"
   },
   "export": {
     "pptx": "Экспорт PPTX",
@@ -716,7 +755,26 @@
     "aiGrading": "AI проверяет...",
     "aiGradingWait": "Пожалуйста подождите, анализируем ваши ответы",
     "quizReport": "Результаты теста",
-    "retry": "Повторить"
+    "retry": "Повторить",
+    "changeSet": "Новый набор",
+    "changeSetFailed": "Не удалось создать новый набор. Попробуйте ещё раз"
+  },
+  "case": {
+    "title": "Разбор кейса",
+    "knowledgePoints": "Ключевые положения главы",
+    "sources": "Источники",
+    "noSources": "Источники не указаны: кейс написан на основе общих знаний, а не цитируемого события.",
+    "discussion": "Вопросы для обсуждения",
+    "analysis": "Разбор кейса",
+    "analysisAction": "Разобрать кейс",
+    "analysisBusy": "Формируется разбор…",
+    "analysisHint": "Связывает кейс с тезисами главы по пунктам.",
+    "analysisFailed": "Не удалось создать разбор. Попробуйте ещё раз.",
+    "hideAnalysis": "Скрыть разбор",
+    "changeCase": "Другой кейс",
+    "changeCaseBusy": "Поиск другого кейса…",
+    "changeCaseFailed": "Не удалось заменить кейс. Попробуйте ещё раз.",
+    "variantBadge": "Кейс {{index}} / {{total}}"
   },
   "roundtable": {
     "teacher": "УЧИТЕЛЬ",
@@ -1030,9 +1088,12 @@
     "requirementPlaceholder": "Расскажите, что вы хотите изучить, например:\n\"Научи меня Python с нуля за 30 минут\"\n\"Объясни преобразование Фурье на доске\"\n\"Как играть в настольную игру Авалон\"",
     "requirementRequired": "Пожалуйста, укажите требования к курсу",
     "fileTooLarge": "Файл слишком большой. Выберите файл до 50 МБ",
-    "courseMaterialCountLimit": "Можно загрузить до 5 файлов материалов курса",
-    "courseMaterialTotalSizeLimit": "Общий размер материалов курса должен быть меньше 150 МБ",
-    "unsupportedCourseMaterial": "Текущий парсер не поддерживает этот формат. Смените парсер или выберите другой файл."
+    "courseMaterialCountLimit": "Можно загрузить до {{n}} файлов материалов курса",
+    "courseMaterialTotalSizeLimit": "Общий размер материалов курса должен быть меньше {{n}} МБ",
+    "unsupportedCourseMaterial": "Текущий парсер не поддерживает этот формат. Смените парсер или выберите другой файл.",
+    "someFilesSkipped": "Пропущено файлов, не поддерживаемых парсером: {{n}}",
+    "existingClassroomOpened": "Для этого материала уже есть занятие — открываем",
+    "existingClassroomExtracting": "Для этого материала уже есть занятие — дополняем разбор и открываем"
   },
   "generation": {
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
@@ -1040,7 +1101,16 @@
     "analyzingCourseMaterial": "Анализ документов",
     "analyzingCourseMaterialDesc": "Извлечение структуры и содержимого документа...",
     "courseMaterialLoadFailed": "Не удалось загрузить материал курса, попробуйте снова",
+    "courseMaterialNotArchived": "Файла {{name}} нет на этом устройстве, и сохранённый результат его разбора не найден. Загрузите файл заново.",
     "courseMaterialParseFailed": "Ошибка обработки материала курса",
+    "courseMaterialExtractProgress": "Разбор {{name}} — страница {{done}}/{{total}}…",
+    "courseMaterialExtractProgressPercent": "Разбор {{name}} — {{percent}} % завершено…",
+    "courseMaterialExtractWaiting": "Разбор {{name}} — ожидание сервиса разбора…",
+    "courseMaterialExtractResuming": "Продолжаем предыдущий разбор {{name}}…",
+    "courseMaterialExtractFailedTimeout": "Время разбора истекло: сервис не вернул результат вовремя. Повторная загрузка того же файла продолжит эту задачу, а не начнёт её заново.",
+    "courseMaterialExtractFailedUnavailable": "Сервис разбора временно недоступен. Повторите попытку позже.",
+    "courseMaterialExtractFailedQuota": "Сервис разбора отклонил запрос: квота аккаунта исчерпана.",
+    "courseMaterialExtractFailedAuth": "Сервис разбора отклонил учётные данные. Проверьте ключ API в настройках.",
     "streamNotReadable": "Не удалось прочитать поток генерации",
     "generatingOutlines": "Создание структуры курса",
     "generatingOutlinesDesc": "Формирование учебной программы...",
@@ -1086,6 +1156,7 @@
     "sceneTypeQuiz": "Тест",
     "sceneTypeInteractive": "Интерактив",
     "sceneTypePbl": "PBL",
+    "sceneTypeCase": "Разбор кейса",
     "sceneDescriptionPlaceholder": "Кратко опишите цель и содержание этой сцены",
     "quizQuestionCount": "Количество вопросов",
     "quizDifficulty": "Сложность",
@@ -1143,7 +1214,9 @@
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
-    "analyzingMediaMaterial": "Анализ аудио/видео"
+    "analyzingMediaMaterial": "Анализ аудио/видео",
+    "caseResearching": "Поиск материалов кейса",
+    "caseResearchingDesc": "Поиск реальных событий по этой главе"
   },
   "settings": {
     "title": "Настройки",
@@ -1408,7 +1481,6 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
-    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Локальный)",
     "providerBrowserNativeTTS": "Встроенный TTS браузера",
     "voxcpmBackend": "Бэкенд",
@@ -1461,7 +1533,6 @@
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
     "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
-    "ttsSpeedUnsupported": "This provider does not support speed adjustment.",
     "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
     "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
     "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
@@ -1472,8 +1543,6 @@
     "providerLemonadeASR": "Lemonade ASR (Локальный)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (встроенный)",
-    "providerMinerU": "MinerU",
-    "providerMinerUCloud": "MinerU (Облако)",
     "browserNativeTTSNote": "Встроенный TTS браузера не требует настройки и полностью бесплатен, использует системные голоса",
     "testTTS": "Тест TTS",
     "testASR": "Тест ASR",
@@ -1690,22 +1759,12 @@
     "pdfSettings": "Обработка PDF",
     "documentParsingSettings": "Обработка документов",
     "supportedFormats": "Поддерживаемые форматы",
-    "mineruSelfHostFormatsNote": "Для обработки PDF и изображений на сервере MinerU требуются дополнительные пакеты mineru[pipeline] или mineru[core]. Облегчённые установки mineru-api могут обрабатывать только документы Office.",
     "pdfParsingSettings": "Настройки обработки PDF",
     "pdfDescription": "Выберите движок для обработки PDF с поддержкой извлечения текста, изображений и таблиц",
     "pdfProvider": "PDF-парсер",
     "pdfFeatures": "Поддерживаемые функции",
     "pdfApiKey": "API-ключ",
     "pdfBaseUrl": "Base URL",
-    "mineruDescription": "MinerU — коммерческий сервис обработки PDF с поддержкой извлечения таблиц, распознавания формул и анализа макета.",
-    "mineruApiKeyRequired": "Перед использованием необходимо получить API-ключ на сайте MinerU.",
-    "mineruWarning": "Внимание",
-    "mineruCostWarning": "MinerU — коммерческий сервис, использование может быть платным. Проверьте цены на сайте MinerU.",
-    "enterMinerUApiKey": "Введите MinerU API-ключ",
-    "mineruLocalDescription": "MinerU поддерживает локальное развёртывание с расширенной обработкой PDF (таблицы, формулы, анализ макета). Требуется предварительное развёртывание сервиса MinerU.",
-    "mineruServerAddress": "Адрес локального сервера MinerU (напр., http://localhost:8080)",
-    "mineruApiKeyOptional": "Требуется только если на сервере включена аутентификация",
-    "mineruCloudApiKeyPlaceholder": "Введите API ключ MinerU Cloud",
     "optionalApiKey": "Необязательный API-ключ",
     "featureText": "Извлечение текста",
     "featureImages": "Извлечение изображений",

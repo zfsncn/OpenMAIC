@@ -42,12 +42,49 @@ export type ImageMapping = Record<string, string>;
 
 export interface SelectedCourseMaterial {
   id: string;
-  file: File;
+  /**
+   * The uploaded file's bytes.
+   *
+   * Absent on a chapter restored from the synced directory on a device that
+   * never held the bytes (or whose IndexedDB copy is gone): the row is shown
+   * so the directory survives a device change, and the file has to be selected
+   * again before a lesson can be generated from it. Everything else about the
+   * entry — name, size, order — is authoritative either way, which is why
+   * `courseMaterialFingerprint` reads those fields and not this one.
+   */
+  file?: File;
   name: string;
   size: number;
   lastModified: number;
   type: string;
+  /**
+   * Position within this material's own folder (`folderId`), not within the
+   * whole directory: the homepage keeps one list holding every folder's rows,
+   * and the left-hand panel numbers the rows it shows from 1. So two rows in
+   * two different folders may both be `order: 1`, which is what makes "the
+   * third chapter of this folder" mean the same thing to the panel, to the
+   * upload limits and to the generation step.
+   *
+   * Generation renumbers whatever subset it ingests anyway, so nothing
+   * downstream of the homepage depends on these values being globally unique.
+   */
   order: number;
+  /**
+   * The folder this material belongs to, or `undefined` for an unfiled one.
+   *
+   * Folders group *generated courses*, and this is the only thing that ties a
+   * material to one: the material list stays a single record covering every
+   * folder, and the active folder is applied as a filter over it. That is
+   * deliberate — a material is not *moved* between folders, it is *filed*
+   * under one, so no row ever needs rewriting when the view changes.
+   */
+  folderId?: string;
+  /**
+   * IndexedDB key of this file's bytes on the device that uploaded it
+   * (`storePdfBlob`). Written when the file is attached, so the directory can
+   * be rebuilt after a reload; it is the stable half of the synced entry.
+   */
+  storageKey?: string;
   /** Allocated asset-pool id once the file has been ingested (part 0). */
   assetId?: string;
   /**
@@ -105,6 +142,19 @@ export interface UserRequirements {
   webSearch?: boolean; // Enable web search for richer context
   interactiveMode?: boolean; // Enable Interactive Mode for interactive-first generation
   taskEngineMode?: boolean; // Enable vocational task-engine generation path
+  /**
+   * Which kind of lesson to generate. Absent means an ordinary teaching
+   * classroom — the pre-existing path, unchanged. `'unitQuiz'` makes the
+   * outline step emit a single quiz scene, `'caseTeaching'` a single case
+   * scene; neither carries teaching slides, and each stamps the resulting
+   * stage with the same value.
+   *
+   * It rides on the requirements because that is the one object the preview
+   * page forwards to the outline stream verbatim (see the scene-outlines fetch
+   * in `app/generation-preview/page.tsx`), and the server is what has to act on
+   * it.
+   */
+  lessonKind?: LessonKind;
 }
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
@@ -150,7 +200,7 @@ export interface WidgetOutline {
  */
 export interface SceneOutline {
   id: string;
-  type: 'slide' | 'quiz' | 'interactive' | 'pbl';
+  type: 'slide' | 'quiz' | 'interactive' | 'pbl' | 'case';
   title: string;
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
@@ -167,6 +217,43 @@ export interface SceneOutline {
     questionCount: number;
     difficulty: 'easy' | 'medium' | 'hard';
     questionTypes: ('single' | 'multiple' | 'text')[];
+    /**
+     * Explicit per-type quotas, used by the quiz-classroom path. `questionCount`
+     * still states the total and stays what the ordinary path reads; a count
+     * plus a type *set* cannot express "5 single, 5 multiple, 1 discussion",
+     * which is exactly what the unit-quiz flow requires.
+     */
+    questionMix?: Array<{ type: 'single' | 'multiple' | 'text'; count: number }>;
+    /**
+     * How many options every choice question must offer. Absent leaves the
+     * count to the model — the ordinary path, which has always varied between
+     * four and five. The unit-quiz path sets it so the prompt and the
+     * server-side contract agree on a fixed set of distractors.
+     */
+    optionCount?: number;
+    /**
+     * 1-based regeneration counter for the "shuffle a fresh set" action on a
+     * quiz classroom. Absent on the first generation; each regeneration bumps
+     * it so the prompt can demand a set that does not repeat an earlier one.
+     */
+    attempt?: number;
+  };
+  /**
+   * Case-teaching config. The chapter knowledge points are NOT duplicated here:
+   * they ride on the outline's first-class `keyPoints`, which every outline
+   * already persists. One list means the narrative, the discussion questions
+   * and the later analysis cannot drift apart by reading two copies written at
+   * different times.
+   */
+  caseConfig?: {
+    /** How many discussion questions the case should pose. */
+    questionCount?: number;
+    /**
+     * 1-based counter for "show a different case". Absent on the first one;
+     * each regeneration bumps it so the prompt can demand an event that is not
+     * the one the learner just read.
+     */
+    attempt?: number;
   };
   /**
    * @deprecated Use widgetType + widgetOutline instead
@@ -196,7 +283,7 @@ export interface SceneOutline {
 
 // ==================== Stage 3 Output: Generated Content ====================
 
-import type { PPTElement, SlideBackground } from '@openmaic/dsl';
+import type { LessonKind, PPTElement, SlideBackground } from '@openmaic/dsl';
 import type { QuizQuestion } from './stage';
 
 /**
@@ -213,6 +300,33 @@ export interface GeneratedSlideContent {
  */
 export interface GeneratedQuizContent {
   questions: QuizQuestion[];
+}
+
+// ==================== Case Generation Types ====================
+
+import type { CaseAnalysis, CaseQuestion, CaseSourceRef } from '@openmaic/dsl';
+
+/**
+ * AI-generated case content, before it is assembled into a scene.
+ *
+ * Carries no `type` discriminator — the field is attached when the payload is
+ * assembled into a `Scene`, so nothing here may branch on `content.type`.
+ * `analysis` is absent on the first pass (the case) and present on the second
+ * (the staged reveal); the passes are told apart by which fields are read.
+ */
+export interface GeneratedCaseContent {
+  caseTitle?: string;
+  summary?: string;
+  knowledgePoints?: string[];
+  narrative?: string;
+  /**
+   * Named in full, never `questions`: a generated payload has no discriminant,
+   * so consumers identify it by which keys are present. Sharing a key with
+   * `GeneratedQuizContent` would make that check match either kind.
+   */
+  discussionQuestions?: CaseQuestion[];
+  sources?: CaseSourceRef[];
+  analysis?: CaseAnalysis;
 }
 
 // ==================== PBL Generation Types ====================

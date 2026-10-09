@@ -684,12 +684,6 @@ const getDefaultAudioConfig = () => ({
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: true },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: true },
-    'google-tts': {
-      apiKey: '',
-      baseUrl: '',
-      modelId: 'gemini-3.1-flash-tts-preview',
-      enabled: true,
-    },
     'lemonade-tts': {
       apiKey: '',
       baseUrl: '',
@@ -714,13 +708,19 @@ const getDefaultAudioConfig = () => ({
 });
 
 // Initialize default PDF config
+//
+// The system default document extractor is AliDocMind. Two fields must agree
+// for that to hold: `pdfProviderId` selects it, and the provider's `enabled`
+// flag must NOT be false — `isProviderUsable` treats `enabled === false` as an
+// authorization-off and would immediately revert the selection to the
+// `validateProvider` fallback (`unpdf`). That fallback stays `unpdf` on
+// purpose: it is the only zero-credential extractor, so a user with no
+// AliDocMind AccessKey still lands somewhere that works.
 const getDefaultPDFConfig = () => ({
-  pdfProviderId: 'unpdf' as PDFProviderId,
+  pdfProviderId: 'alidocmind' as PDFProviderId,
   pdfProvidersConfig: {
     unpdf: { apiKey: '', baseUrl: '', enabled: true },
-    mineru: { apiKey: '', baseUrl: '', enabled: false },
-    'mineru-cloud': { apiKey: '', baseUrl: '', enabled: false },
-    alidocmind: { apiKey: '', baseUrl: '', enabled: false, accessKeyId: '', accessKeySecret: '' },
+    alidocmind: { apiKey: '', baseUrl: '', enabled: true, accessKeyId: '', accessKeySecret: '' },
   } as Record<
     PDFProviderId,
     {
@@ -2094,7 +2094,6 @@ export const useSettingsStore = create<SettingsState>()(
               let autoTtsVoice: string | undefined;
               let autoAsrProvider: ASRProviderId | undefined;
               let autoAsrLanguage: string | undefined;
-              let autoPdfProvider: PDFProviderId | undefined;
               let autoImageProvider: ImageProviderId | undefined;
               let autoImageModel: string | undefined;
               let autoVideoProvider: VideoProviderId | undefined;
@@ -2104,15 +2103,6 @@ export const useSettingsStore = create<SettingsState>()(
               let autoTtsEnabled: boolean | undefined;
 
               if (!state.autoConfigApplied) {
-                // PDF: unpdf → mineru-cloud or mineru if server has it
-                if (state.pdfProviderId === 'unpdf') {
-                  if (newPDFConfig['mineru-cloud']?.isServerConfigured) {
-                    autoPdfProvider = 'mineru-cloud' as PDFProviderId;
-                  } else if (newPDFConfig.mineru?.isServerConfigured) {
-                    autoPdfProvider = 'mineru' as PDFProviderId;
-                  }
-                }
-
                 // TTS: select first server provider if current is not server-configured.
                 // Skip server-disabled entries — they are force-off, not selectable.
                 const serverTtsIds = Object.entries(data.tts || {})
@@ -2243,7 +2233,6 @@ export const useSettingsStore = create<SettingsState>()(
                 // First-run auto-select overrides validation (autoConfigApplied guard).
                 // On first sync, auto-select picks the best provider. On subsequent syncs,
                 // auto* variables stay undefined so only validation spreads take effect.
-                ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {
                   ttsProviderId: autoTtsProvider,
                   ttsVoice: autoTtsVoice,

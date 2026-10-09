@@ -30,6 +30,8 @@
  * |   600 | `runtime`         | `runtime_sessions` (records follow their session)      |
  * |   700 | `assets`          | `asset_entries.principal`                              |
  * |   800 | `legacy-import-bindings` | `legacy_import_bindings` (which owner a browser's pre-server data belongs to) |
+ * |   900 | `app-kv`          | `app_kv` (owner-scoped small keyed values)             |
+ * |   950 | `material-extraction` | `material_extraction` (archived extraction of a material's bytes) |
  *
  * Why this order. Every core write path takes the identity lock first, so none
  * of them can be holding a row a claim wants while it waits for the claim: for
@@ -128,6 +130,8 @@ export const CORE_CLAIM_PARTICIPANTS = [
   'runtime',
   'assets',
   'legacy-import-bindings',
+  'app-kv',
+  'material-extraction',
 ] as const;
 
 /**
@@ -326,6 +330,103 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
       name: 'legacy-import-bindings',
       order: 800,
       rekey: async (tx, from, to) => rekeyLegacyImportBindings(tx, from, to),
+    },
+    {
+      name: 'app-kv',
+      order: 900,
+      rekey: async (tx, from, to) => {
+        // Row locks in key order before the update, like every other re-key.
+        // No advisory lock of its own: these rows reference nothing and no
+        // other writer orders against them beyond the identity lock a claim
+        // already holds exclusively for both owners.
+        await tx.query('SELECT key FROM app_kv WHERE owner_id = $1 ORDER BY key FOR UPDATE', [
+          from,
+        ]);
+        // `(owner_id, key)` is the primary key, so a key both owners hold
+        // cannot simply be re-pointed. The account's copy wins: it is the
+        // durable one, and overwriting it with an anonymous value would lose
+        // the user's account-side edit to a stale browser's. Drop the
+        // duplicate first, then move the rest.
+        const dropped = await tx.query<{ key: string } & Record<string, unknown>>(
+          `DELETE FROM app_kv AS src
+            WHERE src.owner_id = $1
+              AND EXISTS (
+                SELECT 1 FROM app_kv AS dst
+                 WHERE dst.owner_id = $2 AND dst.key = src.key
+              )
+            RETURNING src.key`,
+          [from, to],
+        );
+        const moved = await tx.query<{ key: string } & Record<string, unknown>>(
+          'UPDATE app_kv SET owner_id = $2 WHERE owner_id = $1 RETURNING key',
+          [from, to],
+        );
+        // Only the rows that actually moved are counted; a resolved duplicate
+        // was dropped, not moved.
+        if (dropped.rows.length > 0) {
+          console.info(
+            `[owner-claims] app_kv: dropped ${dropped.rows.length} key(s) the account already held`,
+          );
+        }
+        return moved.rows.length;
+      },
+    },
+    {
+      // The derivation archive references nothing and nothing references it,
+      // so it takes an order no core table depends on (950: after the core
+      // list, before the 1000+ range left to hosts).
+      //
+      // A key both owners hold is the SAME derivation — the composite key is
+      // (owner, content digest, extractor id, extractor version), so two rows
+      // under one key were produced by the same extractor from the same bytes
+      // and carry the same output. There is nothing to lose by keeping the
+      // account's, and it must be kept: overwriting the durable account row
+      // with an anonymous copy would only rewrite identical text.
+      name: 'material-extraction',
+      order: 950,
+      rekey: async (tx, from, to) => {
+        // Row locks in primary-key order before the update, like app_kv. No
+        // advisory lock of its own: nothing here orders against these rows
+        // beyond the identity lock a claim already holds exclusively for both
+        // owners.
+        await tx.query(
+          `SELECT content_digest
+             FROM material_extraction
+            WHERE owner_id = $1
+            ORDER BY content_digest, extractor_id, extractor_version
+            FOR UPDATE`,
+          [from],
+        );
+        const dropped = await tx.query<{ content_digest: string } & Record<string, unknown>>(
+          `DELETE FROM material_extraction AS src
+            WHERE src.owner_id = $1
+              AND EXISTS (
+                SELECT 1 FROM material_extraction AS dst
+                 WHERE dst.owner_id = $2
+                   AND dst.content_digest = src.content_digest
+                   AND dst.extractor_id = src.extractor_id
+                   AND dst.extractor_version = src.extractor_version
+              )
+            RETURNING src.content_digest`,
+          [from, to],
+        );
+        const moved = await tx.query<{ content_digest: string } & Record<string, unknown>>(
+          `UPDATE material_extraction
+              SET owner_id = $2
+            WHERE owner_id = $1
+        RETURNING content_digest`,
+          [from, to],
+        );
+        // Only the rows that actually moved are counted; a resolved duplicate
+        // was dropped, not moved.
+        if (dropped.rows.length > 0) {
+          console.info(
+            `[owner-claims] material_extraction: dropped ${dropped.rows.length} derivation(s) ` +
+              'the account already held',
+          );
+        }
+        return moved.rows.length;
+      },
     },
   ];
 }

@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { SlideEditor as SlideRenderer } from '../slide-renderer/Editor';
 import { QuizView } from '../scene-renderers/quiz-view';
+import { CaseView } from '../scene-renderers/case-view';
 import { InteractiveRenderer } from '../scene-renderers/interactive-renderer';
 import { PBLRenderer } from '../scene-renderers/pbl-renderer';
 
@@ -39,6 +40,9 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
       case 'pbl':
         if (scene.content.type !== 'pbl') return <div>Invalid PBL content</div>;
         return <PBLRenderer content={scene.content} mode={mode} sceneId={scene.id} />;
+      case 'case':
+        if (scene.content.type !== 'case') return <div>Invalid case content</div>;
+        return <CaseView content={scene.content} sceneId={scene.id} stageId={scene.stageId} />;
       default:
         return <div>Unknown scene type</div>;
     }

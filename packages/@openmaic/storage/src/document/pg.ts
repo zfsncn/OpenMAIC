@@ -15,12 +15,13 @@ import {
   DSL_VERSION,
   DSL_VERSION_KEY,
   dslVersionOf,
+  isLessonKind,
   migrate,
   needsMigration,
   validateScene,
   validateStage,
 } from '@openmaic/dsl';
-import type { Scene, Stage } from '@openmaic/dsl';
+import type { LessonKind, Scene, Stage } from '@openmaic/dsl';
 import { reassembleDocument, splitDocument, type OutlineRow, type StageRow } from './adapter.js';
 import type {
   DocumentStore,
@@ -551,6 +552,8 @@ interface SummaryRow extends Record<string, unknown> {
   updated_at: number | string;
   scene_count: number | string;
   folder_id: string | null;
+  source_digests: unknown;
+  lesson_kind: unknown;
 }
 
 interface FolderRow extends Record<string, unknown> {
@@ -559,6 +562,34 @@ interface FolderRow extends Record<string, unknown> {
   folder_order: number | string;
   created_at: number | string;
   updated_at: number | string;
+}
+
+/**
+ * Narrow the raw `data -> 'sourceDigests'` value into a summary field.
+ *
+ * The column is JSONB produced by whatever version of the app wrote the stage,
+ * so it is untrusted here for the same reason every other JSONB read is: a
+ * malformed value must degrade to "this course names no materials" (an absent
+ * field) rather than to a list carrying non-strings that a caller would then
+ * compare against digests. An empty array is omitted too — it says the same
+ * thing as the field being absent, and one shape is easier to rely on.
+ */
+function readSummarySourceDigests(value: unknown): { sourceDigests?: string[] } {
+  if (!Array.isArray(value)) return {};
+  const digests = value.filter((entry): entry is string => typeof entry === 'string');
+  return digests.length > 0 ? { sourceDigests: digests } : {};
+}
+
+/**
+ * The stage JSONB's `lessonKind`, read as defensively as
+ * {@link readSummarySourceDigests}: an unrecognised value degrades to "an
+ * ordinary lesson" (the field being absent) rather than reaching a caller as a
+ * string it would then compare against a wanted kind, and `'lesson'` itself is
+ * omitted too — absence already says it, and one shape is easier to rely on.
+ */
+function readSummaryLessonKind(value: unknown): { lessonKind?: LessonKind } {
+  if (!isLessonKind(value) || value === 'lesson') return {};
+  return { lessonKind: value };
 }
 
 function assertValid(
@@ -1403,6 +1434,12 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     // Owned and not retired, through the host's relation, when this store
     // scopes documents; every document otherwise.
     const owned = this.ownedClause('stages.id', params, true);
+    // `source_digests` is the one summary field that lives in the JSONB: it is
+    // an app-owned, additive stage field with no column (see `DocumentSummary`),
+    // and the picker needs it to tell whether a material already produced a
+    // course. Extracting a single key is not "decoding content" — the row's
+    // scenes and outline are still never read here — and the stage JSONB is
+    // small by construction, since generated content lives in `document_scenes`.
     const result = await this.queryable.query<SummaryRow>(
       `SELECT stages.id,
               stages.name,
@@ -1412,6 +1449,8 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
               stages.created_at,
               stages.updated_at,
               ${this.folders ? 'stages.folder_id' : 'NULL::text AS folder_id'},
+              stages.data -> 'sourceDigests' AS source_digests,
+              stages.data -> 'lessonKind' AS lesson_kind,
               COUNT(scenes.id)::text AS scene_count
          FROM document_stages AS stages
          LEFT JOIN document_scenes AS scenes ON scenes.stage_id = stages.id
@@ -1430,6 +1469,8 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       updatedAt: Number(row.updated_at),
       sceneCount: Number(row.scene_count),
       ...(row.folder_id === null ? {} : { folderId: row.folder_id }),
+      ...readSummarySourceDigests(row.source_digests),
+      ...readSummaryLessonKind(row.lesson_kind),
     }));
   }
 

@@ -10,6 +10,7 @@
 // `Scene<Action, AppSceneContent>`, so existing `import { Scene }` callers keep
 // the same semantics (actions are `Action[]`, content spans all four kinds).
 import type {
+  CaseContent as DslCaseContent,
   InteractiveContent as DslInteractiveContent,
   PBLContent as DslPBLContent,
   Scene as DslScene,
@@ -29,16 +30,22 @@ export type {
   GeneratedAgentConfig,
   MultiAgentConfig,
   Stage,
+  LessonKind,
   SlideContent,
   QuizOption,
   QuizQuestion,
   QuizContent,
+  CaseAnalysis,
+  CaseAnalysisEntry,
+  CaseQuestion,
+  CaseSourceRef,
+  CaseVariant,
 } from '@openmaic/dsl';
 
 // The two discriminant guards are runtime functions, so they must be value
 // re-exported — a bare `export type {}` erases them and leaves the import as
 // `undefined` at runtime / "cannot be used as a value" at the type level.
-export { isSlideContent, isQuizContent } from '@openmaic/dsl';
+export { isSlideContent, isQuizContent, isCaseContent, isLessonKind } from '@openmaic/dsl';
 
 // `@openmaic/dsl` inlines the question-type union on `QuizQuestion.type` rather than
 // exporting a named alias; derive it here so editor quiz code can keep importing
@@ -75,16 +82,26 @@ export type PBLContent = DslPBLContent & {
 };
 
 /**
- * The app's full scene-content union: the contract's universal kinds plus the
- * app-widened feature kinds. This is what `@/lib/types/stage` callers have
- * always known as `SceneContent` (all four cases).
+ * Case content — a real-world case studied against a chapter's knowledge
+ * points.
+ *
+ * The contract owns the whole shape: unlike interactive and PBL, the app adds
+ * no runtime state or richer widget payload, so the contract type is the app
+ * type and no widening layer is needed.
  */
-export type AppSceneContent = DslSceneContent | InteractiveContent | PBLContent;
+export type CaseContent = DslCaseContent;
 
 /**
- * The app's `SceneContent` — the full four-way union. Overrides the contract's
- * narrower `SceneContentBase` (slide | quiz) so call sites that switch on all
- * four `content.type` cases keep compiling.
+ * The app's full scene-content union: the contract's universal kinds plus the
+ * app-widened feature kinds. This is what `@/lib/types/stage` callers have
+ * always known as `SceneContent`.
+ */
+export type AppSceneContent = DslSceneContent | InteractiveContent | PBLContent | CaseContent;
+
+/**
+ * The app's `SceneContent` — the full five-way union. Overrides the contract's
+ * narrower `SceneContentBase` (slide | quiz) so call sites that switch on every
+ * `content.type` case keep compiling.
  */
 export type SceneContent = AppSceneContent;
 
@@ -94,7 +111,7 @@ export type SceneContent = AppSceneContent;
  *
  * Aliased as `Scene` so existing `import { Scene } from '@/lib/types/stage'`
  * callers keep their original semantics (actions are `Action[]`, content spans
- * all four kinds).
+ * all five kinds).
  */
 export type AppScene = DslScene<Action, SceneContent> & {
   /**

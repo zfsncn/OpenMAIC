@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo, useEffect } from 'react';
-import { Bot, Paperclip, FileText, X } from 'lucide-react';
+import { Bot, Paperclip } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -51,6 +51,14 @@ export interface GenerationToolbarProps {
    * when no usable LLM provider exists (#580: the homepage must never dead-end).
    */
   onSettingsOpen?: (section: SettingsSection) => void;
+  /**
+   * Currently selected chapter (a `SelectedCourseMaterial.id`), or null when no
+   * chapter is selected — in which case every material is merged, which is the
+   * pre-existing behaviour. Selection is a display-only filter applied by the
+   * parent at submit time; the chapter list itself lives in the top-left
+   * directory, so this prop only drives the trigger badge here.
+   */
+  selectedMaterialId?: string | null;
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -61,6 +69,7 @@ export function GenerationToolbar({
   onPdfError,
   materialsLocked = false,
   onSettingsOpen,
+  selectedMaterialId = null,
 }: GenerationToolbarProps) {
   const { t } = useI18n();
   const pdfProviderId = useSettingsStore((s) => s.pdfProviderId);
@@ -89,6 +98,13 @@ export function GenerationToolbar({
     () => getAcceptStringForProviders(activeDocumentProviderIds),
     [activeDocumentProviderIds],
   );
+
+  // Resolve the selected chapter defensively: a dangling id (the material was
+  // removed, or the extractor switch dropped it) must degrade to "no selection"
+  // rather than point at a row that no longer exists.
+  const selectedMaterial = selectedMaterialId
+    ? (courseMaterials.find((material) => material.id === selectedMaterialId) ?? null)
+    : null;
 
   // If the user switches to a provider that doesn't support already attached
   // materials, drop only the incompatible files so the eventual extraction
@@ -122,11 +138,12 @@ export function GenerationToolbar({
         activeDocumentProviderIds,
       ),
     );
+    // Partial rejection: a chapter set is picked by dragging many files at
+    // once, so one unsupported file must not throw away the whole batch.
+    // Drop the unsupported ones and report how many were skipped — the same
+    // "keep some, drop some" shape as chapter selection itself.
+    const skippedCount = incomingFiles.length - supportedFiles.length;
     if (supportedFiles.length === 0) {
-      onPdfError(t('upload.unsupportedCourseMaterial'));
-      return;
-    }
-    if (supportedFiles.length !== incomingFiles.length) {
       onPdfError(t('upload.unsupportedCourseMaterial'));
       return;
     }
@@ -155,7 +172,7 @@ export function GenerationToolbar({
       return;
     }
 
-    onPdfError(null);
+    onPdfError(skippedCount > 0 ? t('upload.someFilesSkipped', { n: skippedCount }) : null);
     onCourseMaterialsAdd(dedupedFiles);
   };
 
@@ -207,9 +224,11 @@ export function GenerationToolbar({
             <button className={pillActive}>
               <Paperclip className="size-3.5" />
               <span className="max-w-[140px] truncate">
-                {courseMaterials.length === 1
-                  ? courseMaterials[0].name
-                  : t('toolbar.courseMaterialsSelected', { n: courseMaterials.length })}
+                {selectedMaterial
+                  ? t('toolbar.selectedChapterBadge', { n: selectedMaterial.order })
+                  : courseMaterials.length === 1
+                    ? courseMaterials[0].name
+                    : t('toolbar.courseMaterialsSelected', { n: courseMaterials.length })}
               </span>
             </button>
           ) : (
@@ -313,47 +332,6 @@ export function GenerationToolbar({
                   {t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES })}
                 </p>
               </div>
-
-              {courseMaterials.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-[10px] text-muted-foreground/70">
-                    {t('toolbar.courseMaterialMergeOrder')}
-                  </p>
-                  <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                    {[...courseMaterials]
-                      .sort((a, b) => a.order - b.order)
-                      .map((file) => (
-                        <div
-                          key={file.id}
-                          className="flex items-center gap-2 rounded-lg border border-border/50 px-2 py-2"
-                        >
-                          <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                            <FileText className="size-4 text-violet-600 dark:text-violet-400" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">
-                              {file.order}. {file.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {(file.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => onCourseMaterialRemove(file.id)}
-                            disabled={materialsLocked}
-                            className={cn(
-                              'size-6 rounded-full inline-flex items-center justify-center text-muted-foreground transition-colors',
-                              materialsLocked ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted',
-                            )}
-                            aria-label={t('toolbar.removeCourseMaterial')}
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </PopoverContent>

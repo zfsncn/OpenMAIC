@@ -11,7 +11,28 @@
   },
   "home": {
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
-    "greetingWithName": "Hallo, {{name}}"
+    "greetingWithName": "Hallo, {{name}}",
+    "usageGuide": {
+      "title": "Drei Wege zum Start",
+      "openLabel": "Anleitung",
+      "collapseLabel": "Hinweis einklappen",
+      "expandLabel": "Hinweis ausklappen",
+      "steps": {
+        "noText": {
+          "title": "Ohne Material starten",
+          "desc": "Schreiben Sie ins Eingabefeld, was Sie lernen möchten, klicken Sie auf „Kurs erstellen“ und warten Sie, bis die Agenten die Folien erzeugen."
+        },
+        "withMaterial": {
+          "title": "Material hochladen, Kurs anlegen",
+          "desc": "Auf „Neuer Ordner“ klicken und den Kurs benennen → mit der Büroklammer das Material hochladen → links erscheint das Kapitelverzeichnis; Datei auswählen, die Schaltflächen werden aktiv, dann eine davon wählen."
+        },
+        "existing": {
+          "title": "Bestehenden Kurs öffnen",
+          "desc": "Auf einen Kursordner wie „舆情学“ klicken (falls die Liste leer bleibt, den Browser neu laden) → links erscheint das Kapitelverzeichnis; Kapitel auswählen, die Schaltflächen werden aktiv, dann eine davon wählen."
+        }
+      },
+      "apiKeyNote": "Ein LLM-API-Schlüssel ist bereits hinterlegt. Bei Problemen oben rechts über ⚙ einen gültigen Schlüssel eintragen."
+    }
   },
   "toolbar": {
     "pdfParser": "Parser",
@@ -22,6 +43,8 @@
     "courseMaterialsSelected": "Ausgewählte Materialien: {{n}}",
     "courseMaterialMergeOrder": "Die Materialien werden in der unten gezeigten Reihenfolge zusammengeführt.",
     "removeCourseMaterial": "Datei entfernen",
+    "removeCourseMaterialConfirmTitle": "Kursmaterial entfernen",
+    "removeCourseMaterialConfirmMessage": "{{name}} entfernen? Zum Wiederherstellen müssen Sie die Datei erneut hochladen.",
     "webSearchOn": "Aktiviert",
     "webSearchOff": "Zum Aktivieren klicken",
     "webSearchDesc": "Vor der Generierung das Web nach aktuellen Informationen durchsuchen",
@@ -44,7 +67,23 @@
     "ttsPreview": "Vorschau",
     "ttsPreviewing": "Wird abgespielt...",
     "interactiveModeHint": "Aktiviere den interaktiven Modus, damit bevorzugt interaktive Inhalte erzeugt werden",
-    "interactiveModeLabel": "Interaktiver Modus"
+    "interactiveModeLabel": "Interaktiver Modus",
+    "courseMaterialPanel": "Kursmaterialien",
+    "selectedChapterBadge": "Kapitel {{n}} ausgewählt",
+    "selectChapter": "Dieses Kapitel auswählen",
+    "chapterRequirementTemplate": "Lektion starten: {{order}} {{title}}",
+    "chapterDirectory": "Kurskapitel",
+    "chapterDirectoryCollapse": "Kapitel einklappen",
+    "chapterDirectoryExpand": "Kapitel ausklappen",
+    "chapterMergeHint": "Wähle ein Kapitel, um nur dieses zu generieren; ohne Auswahl werden alle Materialien zusammengeführt (aktuelles Verhalten).",
+    "chapterDirectoryEmpty": "In diesem Ordner gibt es noch keine Kapitel.",
+    "chapterDirectoryEmptyHint": "Lade eine Datei hoch, während dieser Ordner geöffnet ist, dann erscheint sie hier.",
+    "chapterFileMissing": "Datei nicht auf diesem Gerät — erneut auswählen, um dieses Kapitel zu verwenden",
+    "chapterFileMissingNamed": "{{name}} ist auf diesem Gerät nicht vorhanden. Bitte die Datei erneut auswählen.",
+    "unitQuizRequirement": "Erstellen Sie einen Unit-Test zu den Kerninhalten von „{{name}}“.",
+    "caseTeachingRequirement": "Erstelle eine Fallstudien-Lektion zu den Kernpunkten aus {{name}}.",
+    "unitQuiz": "Modul-Test",
+    "caseTeaching": "Fallstudie"
   },
   "export": {
     "pptx": "PPTX exportieren",
@@ -716,7 +755,26 @@
     "aiGrading": "Die KI wertet aus...",
     "aiGradingWait": "Bitte warten, deine Antworten werden ausgewertet",
     "quizReport": "Quizbericht",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "changeSet": "Neuer Satz",
+    "changeSetFailed": "Neuer Satz konnte nicht erstellt werden. Bitte erneut versuchen"
+  },
+  "case": {
+    "title": "Fallstudie",
+    "knowledgePoints": "Wissenspunkte des Kapitels",
+    "sources": "Quellen",
+    "noSources": "Keine Quellen angegeben — dieser Fall wurde aus allgemeinem Wissen verfasst, nicht aus einem belegten Ereignis.",
+    "discussion": "Diskussionsfragen",
+    "analysis": "Fallanalyse",
+    "analysisAction": "Fall analysieren",
+    "analysisBusy": "Analyse wird erstellt…",
+    "analysisHint": "Verknüpft den Fall Punkt für Punkt mit diesem Kapitel.",
+    "analysisFailed": "Analyse konnte nicht erstellt werden. Bitte erneut versuchen.",
+    "hideAnalysis": "Analyse ausblenden",
+    "changeCase": "Anderen Fall verwenden",
+    "changeCaseBusy": "Es wird nach einem anderen Fall gesucht…",
+    "changeCaseFailed": "Fall konnte nicht gewechselt werden. Bitte erneut versuchen.",
+    "variantBadge": "Fall {{index}} / {{total}}"
   },
   "roundtable": {
     "teacher": "LEHRKRAFT",
@@ -1030,9 +1088,12 @@
     "requirementPlaceholder": "Beschreibe, was du lernen möchtest, z. B.\n\"Bring mir Python in 30 Minuten von Grund auf bei\"\n\"Erkläre die Fourier-Transformation am Whiteboard\"\n\"Wie spielt man das Brettspiel Avalon?\"",
     "requirementRequired": "Bitte gib die Kursanforderungen ein",
     "fileTooLarge": "Die Datei ist zu groß. Wähle bitte eine Datei unter 50 MB aus.",
-    "courseMaterialCountLimit": "Du kannst bis zu 5 Dateien als Kursmaterial hochladen",
-    "courseMaterialTotalSizeLimit": "Die Gesamtgröße der Kursmaterialien muss unter 150 MB liegen",
-    "unsupportedCourseMaterial": "Dieses Format wird vom aktuellen Extraktor nicht unterstützt. Wechsle den Extraktor oder wähle eine andere Datei."
+    "courseMaterialCountLimit": "Du kannst bis zu {{n}} Dateien als Kursmaterial hochladen",
+    "courseMaterialTotalSizeLimit": "Die Gesamtgröße der Kursmaterialien muss unter {{n}} MB liegen",
+    "unsupportedCourseMaterial": "Dieses Format wird vom aktuellen Extraktor nicht unterstützt. Wechsle den Extraktor oder wähle eine andere Datei.",
+    "someFilesSkipped": "{{n}} Datei(en) übersprungen, die der aktuelle Extraktor nicht unterstützt",
+    "existingClassroomOpened": "Für dieses Material gibt es bereits einen Kurs – er wird geöffnet",
+    "existingClassroomExtracting": "Für dieses Material gibt es bereits einen Kurs – Inhalt wird extrahiert, dann geöffnet"
   },
   "generation": {
     "pdfLoadFailed": "PDF-Datei konnte nicht geladen werden. Bitte versuche es erneut.",
@@ -1040,7 +1101,16 @@
     "analyzingCourseMaterial": "Dokumente werden analysiert",
     "analyzingCourseMaterialDesc": "Dokumentstruktur und Inhalte werden extrahiert…",
     "courseMaterialLoadFailed": "Kursmaterial konnte nicht geladen werden. Bitte versuche es erneut.",
+    "courseMaterialNotArchived": "{{name}} ist nicht auf diesem Gerät und es wurde keine gespeicherte Kopie des Inhalts gefunden. Bitte lade die Datei erneut hoch.",
     "courseMaterialParseFailed": "Kursmaterial konnte nicht verarbeitet werden",
+    "courseMaterialExtractProgress": "{{name}} wird analysiert — Seite {{done}}/{{total}}…",
+    "courseMaterialExtractProgressPercent": "{{name}} wird analysiert — {{percent}} % fertig…",
+    "courseMaterialExtractWaiting": "{{name}} wird analysiert — warte auf den Analysedienst…",
+    "courseMaterialExtractResuming": "Die frühere Analyse von {{name}} wird fortgesetzt…",
+    "courseMaterialExtractFailedTimeout": "Zeitüberschreitung bei der Analyse: Der Analysedienst hat nicht rechtzeitig ein Ergebnis geliefert. Wenn Sie dieselbe Datei erneut hochladen, wird dieser Auftrag fortgesetzt statt neu begonnen.",
+    "courseMaterialExtractFailedUnavailable": "Der Analysedienst ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.",
+    "courseMaterialExtractFailedQuota": "Der Analysedienst hat die Anfrage abgelehnt: Das Kontingent des Kontos ist aufgebraucht.",
+    "courseMaterialExtractFailedAuth": "Der Analysedienst hat die Anmeldedaten abgelehnt. Prüfen Sie den API-Schlüssel in den Einstellungen.",
     "streamNotReadable": "Generierungsstream konnte nicht gelesen werden",
     "generatingOutlines": "Kursgliederung wird erstellt",
     "generatingOutlinesDesc": "Der Lernpfad wird strukturiert…",
@@ -1086,6 +1156,7 @@
     "sceneTypeQuiz": "Quiz",
     "sceneTypeInteractive": "Interaktiv",
     "sceneTypePbl": "Projektbasiertes Lernen",
+    "sceneTypeCase": "Fallstudie",
     "sceneDescriptionPlaceholder": "Zweck und Inhalt dieser Szene kurz beschreiben",
     "quizQuestionCount": "Anzahl der Fragen",
     "quizDifficulty": "Schwierigkeitsgrad",
@@ -1143,7 +1214,9 @@
     "webSearchFailed": "Websuche fehlgeschlagen",
     "outlinesReadyCount": "Abschnitte bereit: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Zu einem Abschnitt ohne Titel springen",
-    "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert"
+    "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert",
+    "caseResearching": "Fallmaterial wird recherchiert",
+    "caseResearchingDesc": "Suche nach realen Ereignissen zu diesem Kapitel"
   },
   "settings": {
     "title": "Einstellungen",
@@ -1408,7 +1481,6 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
-    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Lokal)",
     "providerBrowserNativeTTS": "Browserintegrierte TTS",
     "voxcpmBackend": "Backend",
@@ -1461,7 +1533,6 @@
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
     "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
-    "ttsSpeedUnsupported": "This provider does not support speed adjustment.",
     "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
     "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
     "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
@@ -1472,8 +1543,6 @@
     "providerLemonadeASR": "Lemonade ASR (Lokal)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (Integriert)",
-    "providerMinerU": "MinerU",
-    "providerMinerUCloud": "MinerU (Cloud)",
     "browserNativeTTSNote": "Browserintegrierte TTS erfordert keine Konfiguration, ist vollständig kostenlos und verwendet die im System integrierten Stimmen",
     "testTTS": "TTS testen",
     "testASR": "ASR testen",
@@ -1690,22 +1759,12 @@
     "pdfSettings": "PDF-Parsing",
     "documentParsingSettings": "Dokument-Parsing",
     "supportedFormats": "Unterstützte Formate",
-    "mineruSelfHostFormatsNote": "PDF- und Bild-Parsing erfordern die Extras mineru[pipeline] oder mineru[core] auf deinem MinerU-Server. Leichtgewichtige mineru-api-Installationen können möglicherweise nur Office-Dokumente verarbeiten.",
     "pdfParsingSettings": "PDF-Parsing-Einstellungen",
     "pdfDescription": "PDF-Parsing-Engine mit Unterstützung für Textextraktion, Bildverarbeitung und Tabellenerkennung auswählen",
     "pdfProvider": "PDF-Parser",
     "pdfFeatures": "Unterstützte Funktionen",
     "pdfApiKey": "API-Schlüssel",
     "pdfBaseUrl": "Basis-URL",
-    "mineruDescription": "MinerU ist ein kommerzieller PDF-Parsing-Dienst mit erweiterten Funktionen wie Tabellenextraktion, Formelerkennung und Layoutanalyse.",
-    "mineruApiKeyRequired": "Vor der Nutzung musst du auf der MinerU-Website einen API-Schlüssel beantragen.",
-    "mineruWarning": "Warnung",
-    "mineruCostWarning": "MinerU ist ein kommerzieller Dienst, bei dessen Nutzung Kosten entstehen können. Preisdetails findest du auf der MinerU-Website.",
-    "enterMinerUApiKey": "MinerU-API-Schlüssel eingeben",
-    "mineruLocalDescription": "MinerU unterstützt die lokale Bereitstellung mit erweitertem PDF-Parsing (Tabellen, Formeln, Layoutanalyse). Der MinerU-Dienst muss zuerst bereitgestellt werden.",
-    "mineruServerAddress": "Adresse des lokalen MinerU-Servers (z. B. http://localhost:8080)",
-    "mineruApiKeyOptional": "Nur erforderlich, wenn die Authentifizierung auf dem Server aktiviert ist",
-    "mineruCloudApiKeyPlaceholder": "MinerU Cloud-API-Schlüssel eingeben",
     "optionalApiKey": "Optionaler API-Schlüssel",
     "featureText": "Textextraktion",
     "featureImages": "Bildextraktion",

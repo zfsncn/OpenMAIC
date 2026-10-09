@@ -11,7 +11,28 @@
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "greetingWithName": "Hi, {{name}}"
+    "greetingWithName": "Hi, {{name}}",
+    "usageGuide": {
+      "title": "Three ways to start",
+      "openLabel": "How to start",
+      "collapseLabel": "Collapse the guide",
+      "expandLabel": "Expand the guide",
+      "steps": {
+        "noText": {
+          "title": "No material needed",
+          "desc": "Type what you want to learn, click “Enter Classroom”, then wait for the agents to build the lesson slides."
+        },
+        "withMaterial": {
+          "title": "Upload material as a new course",
+          "desc": "Click “New folder” and name the course → upload the material with the paperclip → the chapter list opens on the left; select a file, the action buttons light up, then pick one."
+        },
+        "existing": {
+          "title": "Open an existing course",
+          "desc": "Click a course folder such as “舆情学” (refresh the browser if the list looks empty) → the chapter list opens on the left; select a chapter, the action buttons light up, then pick one."
+        }
+      },
+      "apiKeyNote": "An LLM API key is already configured. If something fails, click the ⚙ at the top right to set a working key."
+    }
   },
   "toolbar": {
     "pdfParser": "Parser",
@@ -22,6 +43,8 @@
     "courseMaterialsSelected": "{{n}} materials selected",
     "courseMaterialMergeOrder": "Materials are merged in the order shown below.",
     "removeCourseMaterial": "Remove file",
+    "removeCourseMaterialConfirmTitle": "Remove course material",
+    "removeCourseMaterialConfirmMessage": "Remove {{name}}? You will need to upload it again to restore it.",
     "webSearchOn": "Enabled",
     "webSearchOff": "Click to enable",
     "webSearchDesc": "Search the web for up-to-date information before generation",
@@ -44,7 +67,23 @@
     "ttsPreview": "Preview",
     "ttsPreviewing": "Playing...",
     "interactiveModeHint": "Enable interactive-first mode for more hands-on content",
-    "interactiveModeLabel": "Interactive Mode"
+    "interactiveModeLabel": "Interactive Mode",
+    "courseMaterialPanel": "Course materials",
+    "selectedChapterBadge": "Chapter {{n}} selected",
+    "selectChapter": "Select this chapter",
+    "chapterRequirementTemplate": "Start the lesson for chapter {{order}}: {{title}}",
+    "chapterDirectory": "Course chapters",
+    "chapterDirectoryCollapse": "Collapse chapters",
+    "chapterDirectoryExpand": "Expand chapters",
+    "chapterMergeHint": "Select one chapter for a focused lesson; leave all unselected to merge every material (current behavior).",
+    "chapterDirectoryEmpty": "No chapter material in this folder yet.",
+    "chapterDirectoryEmptyHint": "Upload a file while this folder is open and it will show up here.",
+    "chapterFileMissing": "File not on this device — select it again to use this chapter",
+    "chapterFileMissingNamed": "{{name}} is not on this device. Select the file again to include this chapter.",
+    "unitQuizRequirement": "Build a unit quiz covering the key ideas in {{name}}.",
+    "caseTeachingRequirement": "Build a case-study lesson from the key ideas in {{name}}.",
+    "unitQuiz": "Unit quiz",
+    "caseTeaching": "Case teaching"
   },
   "export": {
     "pptx": "Export PPTX",
@@ -716,7 +755,26 @@
     "aiGrading": "AI is grading...",
     "aiGradingWait": "Please wait, analyzing your answers",
     "quizReport": "Quiz Report",
-    "retry": "Retry"
+    "retry": "Retry",
+    "changeSet": "New set",
+    "changeSetFailed": "Couldn't generate a new set. Please try again."
+  },
+  "case": {
+    "title": "Case study",
+    "knowledgePoints": "Chapter knowledge points",
+    "sources": "Sources",
+    "noSources": "No sources attached — this case was written from general knowledge, not from a cited event.",
+    "discussion": "Discussion",
+    "analysis": "Analysis",
+    "analysisAction": "Analyse this case",
+    "analysisBusy": "Writing the analysis…",
+    "analysisHint": "Ties the case back to this chapter, point by point.",
+    "analysisFailed": "Could not write the analysis. Please try again.",
+    "hideAnalysis": "Hide the analysis",
+    "changeCase": "Try another case",
+    "changeCaseBusy": "Searching for another case…",
+    "changeCaseFailed": "Could not change the case. Please try again.",
+    "variantBadge": "Case {{index}} / {{total}}"
   },
   "roundtable": {
     "teacher": "TEACHER",
@@ -1030,9 +1088,12 @@
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
     "fileTooLarge": "File too large. Please select a file smaller than 50MB",
-    "courseMaterialCountLimit": "You can upload up to 5 course material files",
-    "courseMaterialTotalSizeLimit": "Total course material size must be under 150MB",
-    "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file."
+    "courseMaterialCountLimit": "You can upload up to {{n}} course material files",
+    "courseMaterialTotalSizeLimit": "Total course material size must be under {{n}}MB",
+    "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file.",
+    "someFilesSkipped": "Skipped {{n}} file(s) the current extractor doesn't support",
+    "existingClassroomOpened": "This material already has a classroom — opening it",
+    "existingClassroomExtracting": "This material already has a classroom — extracting its content, then opening it"
   },
   "generation": {
     "pdfLoadFailed": "Failed to load PDF file, please try again",
@@ -1040,7 +1101,16 @@
     "analyzingCourseMaterial": "Analyzing documents",
     "analyzingCourseMaterialDesc": "Extracting document structure and content...",
     "courseMaterialLoadFailed": "Failed to load course material, please try again",
+    "courseMaterialNotArchived": "{{name}} is not on this device and no saved copy of its content was found. Upload the file again.",
     "courseMaterialParseFailed": "Course material parsing failed",
+    "courseMaterialExtractProgress": "Parsing {{name}} — page {{done}}/{{total}}...",
+    "courseMaterialExtractProgressPercent": "Parsing {{name}} — {{percent}}% done...",
+    "courseMaterialExtractWaiting": "Parsing {{name}} — waiting for the parsing service...",
+    "courseMaterialExtractResuming": "Resuming the earlier parse of {{name}}...",
+    "courseMaterialExtractFailedTimeout": "Parsing timed out: the parsing service did not return a result in time. Uploading the same file again resumes that job instead of starting over.",
+    "courseMaterialExtractFailedUnavailable": "The parsing service is temporarily unavailable. Please try again later.",
+    "courseMaterialExtractFailedQuota": "The parsing service refused the request: the account has no parsing quota left.",
+    "courseMaterialExtractFailedAuth": "The parsing service rejected the credentials. Check the API key in settings.",
     "streamNotReadable": "Unable to read generation stream",
     "generatingOutlines": "Drafting Course Outline",
     "generatingOutlinesDesc": "Structuring the learning path...",
@@ -1086,6 +1156,7 @@
     "sceneTypeQuiz": "Quiz",
     "sceneTypeInteractive": "Interactive",
     "sceneTypePbl": "PBL",
+    "sceneTypeCase": "Case study",
     "sceneDescriptionPlaceholder": "Briefly describe the purpose and content of this scene",
     "quizQuestionCount": "Question count",
     "quizDifficulty": "Difficulty",
@@ -1143,7 +1214,9 @@
     "webSearchFailed": "Web search failed",
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
     "jumpToBlankTitle": "Jump to a section that still needs a title",
-    "analyzingMediaMaterial": "Analyzing audio/video"
+    "analyzingMediaMaterial": "Analyzing audio/video",
+    "caseResearching": "Researching case material",
+    "caseResearchingDesc": "Searching for real events behind this chapter"
   },
   "settings": {
     "title": "Settings",
@@ -1408,7 +1481,6 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
-    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Local)",
     "providerBrowserNativeTTS": "Browser Native TTS",
     "voxcpmBackend": "Backend",
@@ -1461,7 +1533,6 @@
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
     "qwenCloneSpeedHint": "Cloned voices always synthesize at 1× speed.",
-    "ttsSpeedUnsupported": "This provider does not support speed adjustment.",
     "qwenCloneDeleteWarning": "The voice was removed locally, but provider deletion failed.",
     "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
     "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
@@ -1472,8 +1543,6 @@
     "providerLemonadeASR": "Lemonade ASR (Local)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (Built-in)",
-    "providerMinerU": "MinerU",
-    "providerMinerUCloud": "MinerU (Cloud)",
     "browserNativeTTSNote": "Browser Native TTS requires no configuration and is completely free, using system built-in voices",
     "testTTS": "Test TTS",
     "testASR": "Test ASR",
@@ -1690,22 +1759,12 @@
     "pdfSettings": "PDF Parsing",
     "documentParsingSettings": "Document Parsing",
     "supportedFormats": "Supported Formats",
-    "mineruSelfHostFormatsNote": "PDF and image parsing require the mineru[pipeline] or mineru[core] extras on your MinerU server. Lightweight mineru-api installs may only handle Office documents.",
     "pdfParsingSettings": "PDF Parsing Settings",
     "pdfDescription": "Choose PDF parsing engine with support for text extraction, image processing, and table recognition",
     "pdfProvider": "PDF Parser",
     "pdfFeatures": "Supported Features",
     "pdfApiKey": "API Key",
     "pdfBaseUrl": "Base URL",
-    "mineruDescription": "MinerU is a commercial PDF parsing service that supports advanced features such as table extraction, formula recognition, and layout analysis.",
-    "mineruApiKeyRequired": "You need to apply for an API Key on the MinerU website before use.",
-    "mineruWarning": "Warning",
-    "mineruCostWarning": "MinerU is a commercial service and may incur fees. Please check the MinerU website for pricing details.",
-    "enterMinerUApiKey": "Enter MinerU API Key",
-    "mineruLocalDescription": "MinerU supports local deployment with advanced PDF parsing (tables, formulas, layout analysis). Requires deploying MinerU service first.",
-    "mineruServerAddress": "Local MinerU server address (e.g., http://localhost:8080)",
-    "mineruApiKeyOptional": "Only required if server has authentication enabled",
-    "mineruCloudApiKeyPlaceholder": "Enter MinerU Cloud API Key",
     "optionalApiKey": "Optional API Key",
     "featureText": "Text Extraction",
     "featureImages": "Image Extraction",

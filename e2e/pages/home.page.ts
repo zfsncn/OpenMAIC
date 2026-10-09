@@ -9,7 +9,10 @@ export class HomePage {
   constructor(page: Page) {
     this.page = page;
     this.logo = page.locator('img[alt="OpenMAIC"]');
-    this.textarea = page.locator('textarea');
+    // Scoped to the composer: the homepage has grown additional textarea-bearing
+    // surfaces, and a bare `page.locator('textarea')` matches all of them, which
+    // trips Playwright's strict mode.
+    this.textarea = page.locator('[data-pro-morph="composer"] textarea');
     this.enterButton = page
       .getByRole('button', { name: /enter/i })
       .or(page.locator('button:has-text("进入课堂")'));

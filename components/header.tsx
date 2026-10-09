@@ -5,7 +5,12 @@ import { ArrowLeft } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { StageMode } from '@/lib/types/stage';
-import { classroomExitLabelKey, exitClassroom } from '@/lib/workbench/classroom-exit';
+import {
+  classroomExitLabelKey,
+  exitClassroom,
+  resolveClassroomExit,
+} from '@/lib/workbench/classroom-exit';
+import { resetHomeComposer } from '@/lib/home/composer-reset';
 import { HeaderControls } from './stage/header-controls';
 
 interface HeaderProps {
@@ -55,7 +60,14 @@ export function Header({
             ? null
             : (backControl ?? (
                 <button
-                  onClick={() => exitClassroom(router, searchParams)}
+                  onClick={() => {
+                    // Only a return to the *home page* resets the composer. A
+                    // workbench-attached classroom exits to `/workspace`, which
+                    // has no composer of its own, so resetting there would
+                    // clear a prompt the user never left.
+                    if (resolveClassroomExit({ searchParams }).href === '/') resetHomeComposer();
+                    exitClassroom(router, searchParams);
+                  }}
                   className="shrink-0 p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                   title={exitLabel}
                   aria-label={exitLabel}

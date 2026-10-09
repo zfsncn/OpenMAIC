@@ -1,20 +1,35 @@
+# NOTE: Docker anchors ignore patterns to the build-context root, so a bare
+# `node_modules` matches ONLY ./node_modules. pnpm keeps per-package stores at
+# packages/*/node_modules, which then still get sent to the daemon and, via
+# `COPY . .`, overwrite the correct in-image symlinks with host symlinks that
+# point at Windows paths (e.g. /d/OpenMAIC/node_modules/.pnpm/...). Those are
+# dangling inside Linux and break `pnpm run build:packages` with
+# "Cannot find module '.../packages/<pkg>/node_modules/rollup/dist/bin/rollup'".
+# Any pattern that must cover nested directories therefore needs a `**/` prefix.
+
 # dependencies
-node_modules
-.pnpm-store
+**/node_modules
+**/.pnpm-store
 
 # build output
-.next
+# `out` / `build` stay root-anchored on purpose: they are generic names that a
+# future source directory could legitimately use, and no nested one exists today.
+**/.next
 out
+**/dist
 build
-dist
+**/coverage
+**/.turbo
 
 # git
 .git
 .gitignore
 
-# IDE
+# IDE / agent tooling
 .idea
 .vscode
+**/.codegraph
+**/.workbuddy
 
 # env & secrets
 .env*
@@ -28,7 +43,6 @@ assets
 *.pem
 .DS_Store
 .vercel
-coverage
 logs
 data
 docs

@@ -142,23 +142,13 @@ ComfyUI Image は API key 不要で、デフォルトで `http://localhost:8188`
 教材の具体的なフォーマットは選択したパーサーに依存します。現在はテキスト、PDF、Office 文書、画像、一部の音声・動画形式をサポートし、provider によって対応範囲が異なります。
 
 ```bash
-# MinerU 自ホスト
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU 自ホストのオプションバックエンド
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
 # AliDocMind（API key ではなく Alibaba Cloud AccessKey を使用）
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # 任意の上書き
 ```
 
-`unpdf` は OpenMAIC に組み込み済みで、基本的な PDF 解析に使えます。Office 文書、画像、OCR、表、数式、レイアウト解析が必要な教材は MinerU または AliDocMind の互換 provider を選択してください。
+`unpdf` は OpenMAIC に組み込み済みで、基本的な PDF 解析に使えます。Office 文書、画像、OCR、表、数式、レイアウト解析が必要な教材は AliDocMind provider を選択してください。
 
 AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/JPEG、BMP、GIF に対応します。現在の音声・動画素材は AliDocMind でのみ解析可能で、動画は MP4、MOV、AVI、MKV、WMV、音声は MP3、WAV、AAC に対応し、M4A は非対応です。
 
@@ -288,8 +278,6 @@ asr:
     apiKey: sk-...
 
 pdf:
-  mineru:
-    baseUrl: http://localhost:8888
   alidocmind:
     accessKeyId: your-access-key-id
     accessKeySecret: your-access-key-secret
@@ -311,4 +299,4 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。
+環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。

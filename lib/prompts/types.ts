@@ -8,6 +8,8 @@
 export type PromptId =
   | 'interactive-outlines'
   | 'task-engine-outlines'
+  | 'unit-quiz-outlines'
+  | 'case-teaching-outlines'
   | 'web-search-query-rewrite'
   | 'agent-system'
   | 'agent-system-wb-teacher'

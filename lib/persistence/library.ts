@@ -34,6 +34,22 @@ interface LibraryRow extends Record<string, unknown> {
   updated_at: number | string;
   folder_id: string | null;
   scene_count: string;
+  source_digests: unknown;
+}
+
+/**
+ * Narrow the raw `data -> 'sourceDigests'` value into a summary field.
+ *
+ * The JSONB is written by whatever version of the app saved the stage, so it
+ * is untrusted here: a malformed value must degrade to "names no materials"
+ * (an absent field) rather than to a list carrying non-strings a caller would
+ * compare against digests. An empty array is omitted too — it says the same
+ * thing as the field being absent, and one shape is easier to rely on.
+ */
+function readSourceDigests(value: unknown): { sourceDigests?: string[] } {
+  if (!Array.isArray(value)) return {};
+  const digests = value.filter((entry): entry is string => typeof entry === 'string');
+  return digests.length > 0 ? { sourceDigests: digests } : {};
 }
 
 /**
@@ -59,6 +75,7 @@ export async function summarizeLibraryStages(
             stages.created_at,
             stages.updated_at,
             CASE WHEN meta.owner_id = $2 THEN stages.folder_id END AS folder_id,
+            stages.data -> 'sourceDigests' AS source_digests,
             (SELECT COUNT(*) FROM document_scenes AS scenes
               WHERE scenes.stage_id = stages.id)::text AS scene_count
        FROM document_stages AS stages
@@ -82,6 +99,7 @@ export async function summarizeLibraryStages(
       updatedAt: Number(row.updated_at),
       sceneCount: Number(row.scene_count),
       ...(row.folder_id === null ? {} : { folderId: row.folder_id }),
+      ...readSourceDigests(row.source_digests),
     });
   }
   return summaries;

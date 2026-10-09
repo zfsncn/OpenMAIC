@@ -127,6 +127,7 @@ import {
   type ProHomeSessionItem,
 } from '@/lib/workbench/pro-home-data';
 import { filterByName, groupCoursesByFolder } from '@/lib/workbench/workspace-tree';
+import { coursewarePool } from '@/lib/utils/courseware';
 import {
   EMPTY_PAGES,
   RAIL_INITIAL_ROWS,
@@ -470,9 +471,20 @@ export function WorkspaceRail({
   );
   const courseQuery = coursesSection.query;
   const searchingCourses = courseQuery.trim().length > 0;
+  // The tree lists teaching lessons only — "单元测试" / "案例教学" carry the same
+  // `sourceDigests` as the lesson they came from and are kept out of the tree
+  // (and out of the grid beside it) so the two surfaces agree. Searching is
+  // exempt: it is the one door left to rename, move or delete a hidden one.
+  // This is a projection over `courses.classrooms`, NOT a filter of it — that
+  // list is also the reuse predicate's search set, and hiding entries there
+  // would make every generate button build a second course.
+  const visibleCourses = useMemo(
+    () => coursewarePool(orderedCourses, searchingCourses),
+    [orderedCourses, searchingCourses],
+  );
   const matchedOwned = useMemo(
-    () => filterByName(orderedCourses, courseQuery),
-    [orderedCourses, courseQuery],
+    () => filterByName(visibleCourses, courseQuery),
+    [visibleCourses, courseQuery],
   );
   const tree = useMemo(
     () => groupCoursesByFolder(matchedOwned, courses.folders),
@@ -1024,7 +1036,7 @@ export function WorkspaceRail({
           <RailList
             id="courses"
             title={t('workspace.sections.courses')}
-            count={orderedCourses.length}
+            count={visibleCourses.length}
             state={courses.state}
             emptyLabel={t('workspace.coursesEmpty')}
             onRetry={courses.reload}

@@ -65,6 +65,49 @@ describe('isProviderUsable', () => {
     expect(isProviderUsable({ apiKey: 'sk-xxx', serverDisabled: true })).toBe(false);
     expect(isProviderUsable({ isServerConfigured: true, serverDisabled: true })).toBe(false);
   });
+
+  // AliDocMind authenticates with an Alibaba Cloud AccessKey pair, not an
+  // apiKey. The store must recognise that shape, otherwise the provider the
+  // user just picked is judged credential-less and reverted on every sync.
+  it('returns true for an AK/SK-pair provider holding both halves', () => {
+    expect(
+      isProviderUsable({
+        requiresApiKey: true,
+        accessKeyId: 'LTAI-xxx',
+        accessKeySecret: 'secret',
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false when only one half of the AK/SK pair is present', () => {
+    expect(isProviderUsable({ requiresApiKey: true, accessKeyId: 'LTAI-xxx' })).toBe(false);
+    expect(isProviderUsable({ requiresApiKey: true, accessKeySecret: 'secret' })).toBe(false);
+    expect(isProviderUsable({ requiresApiKey: true, accessKeyId: '', accessKeySecret: '' })).toBe(
+      false,
+    );
+  });
+
+  it('still honours the authorization toggle for an AK/SK-pair provider', () => {
+    expect(
+      isProviderUsable({
+        requiresApiKey: true,
+        accessKeyId: 'LTAI-xxx',
+        accessKeySecret: 'secret',
+        enabled: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('still honours operator force-disable for an AK/SK-pair provider', () => {
+    expect(
+      isProviderUsable({
+        requiresApiKey: true,
+        accessKeyId: 'LTAI-xxx',
+        accessKeySecret: 'secret',
+        serverDisabled: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('validateProvider', () => {
@@ -323,6 +366,16 @@ describe('authorization disable is enforced consistently (review P0-02)', () => 
         openai: { isServerConfigured: true, enabled: false },
       }),
     ).toEqual([]);
+  });
+
+  it('buildUsableFallbackOrder 把 AK/SK 凭据认作可用的 client 凭据（AliDocMind）', () => {
+    expect(
+      buildUsableFallbackOrder({
+        alidocmind: { accessKeyId: 'LTAI-xxx', accessKeySecret: 'secret' },
+      }),
+    ).toEqual(['alidocmind']);
+    // 只有一半 AK/SK 不构成凭据。
+    expect(buildUsableFallbackOrder({ alidocmind: { accessKeyId: 'LTAI-xxx' } })).toEqual([]);
   });
 
   it('禁用唯一已配置套餐：validateProvider 保持空选择，auto-recover 无目标可捞', () => {

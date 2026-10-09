@@ -128,7 +128,7 @@ function parseThinking(key: string, raw: unknown): ThinkingConfig | undefined {
  *
  * `scene-content:<type>` are finer-grained composite keys: when a scene-content
  * request carries an `outline.type`, it routes via the composite key and falls
- * back to the base `scene-content` route (see getStageModel). Only the four
+ * back to the base `scene-content` route (see getStageModel). Only the five
  * core scene types are routable; interactive widget sub-types are not split.
  *
  * `pbl-v2-runtime:<route>` keys follow the same composite fallback pattern:
@@ -142,6 +142,11 @@ export const LLM_STAGES = [
   'scene-content:quiz',
   'scene-content:interactive',
   'scene-content:pbl',
+  'scene-content:case',
+  // Explains an existing case rather than building one, so it sits beside the
+  // content stages but not inside them: /api/generate/case-analysis resolves
+  // its model from this key and nowhere else.
+  'case-analysis',
   'scene-actions',
   'agent-profiles',
   'quiz-grade',

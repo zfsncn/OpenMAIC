@@ -7,7 +7,7 @@ import { fetchModels, ModelFetchError } from '@/lib/server/model-fetch';
 const log = createLogger('ProbeModels');
 
 /** Model ids that are not chat models — filtered out of probe results. */
-const NON_CHAT_PATTERN = /(tts|asr|whisper|embedding|rerank|mineru|image|video|voxcpm|moderation)/i;
+const NON_CHAT_PATTERN = /(tts|asr|whisper|embedding|rerank|image|video|voxcpm|moderation)/i;
 
 /**
  * POST /api/provider/probe-models

@@ -13,7 +13,7 @@ import type {
   UserRequirements,
 } from '@/lib/types/generation';
 import type { AgentInfo } from '@openmaic/generation';
-import type { Scene } from '@/lib/types/stage';
+import type { CaseAnalysis, Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
@@ -70,7 +70,13 @@ type ClientRetryOptions<T> = Partial<
   Omit<GenerationRetryOptions<T>, 'label' | 'shouldRetryResult' | 'signal'>
 >;
 
-function getApiHeaders(): HeadersInit {
+/**
+ * Headers every generation route reads its model and provider configuration
+ * from. Exported because the case-research transport builds its own request to
+ * `/api/web-search` and must speak the same protocol — a second copy of this
+ * header set would drift the moment a provider is added.
+ */
+export function getApiHeaders(): HeadersInit {
   const config = getCurrentModelConfig();
   const settings = useSettingsStore.getState();
   const imageProviderConfig = settings.imageProvidersConfig?.[settings.imageProviderId];
@@ -100,7 +106,8 @@ function getApiHeaders(): HeadersInit {
   };
 }
 
-function withThinkingConfig<T extends Record<string, unknown>>(body: T): T {
+/** Same reasoning as {@link getApiHeaders}: shared, not duplicated. */
+export function withThinkingConfig<T extends Record<string, unknown>>(body: T): T {
   const { thinkingConfig } = getCurrentModelConfig();
   return thinkingConfig ? ({ ...body, thinkingConfig } as T) : body;
 }
@@ -160,6 +167,14 @@ export async function fetchSceneContent(
     agents?: AgentInfo[];
     languageDirective?: string;
     requirements?: Partial<UserRequirements>;
+    /**
+     * Case-only research material, already gathered by the caller (see
+     * `lib/classroom/case-research.ts`). `caseContext` is the rendered search
+     * result; `caseSources` is the URL list that backs it and doubles as the
+     * whitelist for whatever the model cites back.
+     */
+    caseContext?: string;
+    caseSources?: { title: string; url: string }[];
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneContentResult>,
@@ -193,6 +208,67 @@ export async function fetchSceneContent(
     return {
       success: false,
       error: messageFromError(error, 'Content generation failed'),
+      ...errorMeta(error),
+    };
+  }
+}
+
+interface CaseAnalysisResult {
+  success: boolean;
+  analysis?: CaseAnalysis;
+  error?: string;
+  errorCode?: string;
+  statusCode?: number;
+}
+
+/**
+ * Call POST /api/generate/case-analysis.
+ *
+ * The second pass over a case scene: it explains a case the learner has already
+ * read, so its input is the scene content rather than the outline. Retries on
+ * the plain "did anything come back" predicate — unlike scene content there is
+ * no partially usable payload, because the route discards an analysis that names
+ * no chapter knowledge point whole rather than returning half of one.
+ */
+export async function fetchCaseAnalysis(
+  params: {
+    caseTitle: string;
+    narrative: string;
+    knowledgePoints: string[];
+    languageDirective?: string;
+  },
+  signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<CaseAnalysisResult>,
+): Promise<CaseAnalysisResult> {
+  try {
+    return await withGenerationRetry(
+      async () => {
+        const response = await fetch('/api/generate/case-analysis', {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(withThinkingConfig(params)),
+          signal,
+        });
+
+        const data = await readJsonResponse(response);
+        if (!response.ok) {
+          throw createHttpError(response, data, 'Case analysis request failed');
+        }
+
+        return data as unknown as CaseAnalysisResult;
+      },
+      {
+        label: `case analysis "${params.caseTitle}"`,
+        shouldRetryResult: (result) => !result.success || !result.analysis,
+        ...retryOptions,
+        signal,
+      },
+    );
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return {
+      success: false,
+      error: messageFromError(error, 'Case analysis failed'),
       ...errorMeta(error),
     };
   }

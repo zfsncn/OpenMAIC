@@ -57,6 +57,31 @@ export async function readServerDocument(
   return response.json();
 }
 
+/**
+ * Retire a seeded course, as the page's owner.
+ *
+ * A spec that seeds a course into a database it does not own — a deployment's
+ * real database, which is what `reuseExistingServer` reaches — is a guest in a
+ * library it did not create, and guests do not leave their furniture behind.
+ *
+ * `DELETE /documents/:stageId` is a **tombstone, not a row delete**: the
+ * document row stays and `stage_meta.deleted_at` marks the id as retired, which
+ * is what removes it from every listing (and why a retired id can never be
+ * claimed again). That is the right outcome here — the course disappears from
+ * the deployment's library — but it does mean the row itself remains, so this
+ * hides a seeded course rather than erasing it. Purge the rows with SQL if a
+ * database should be left byte-identical.
+ *
+ * `404` is success: the course is not visible, which is the whole point.
+ */
+export async function retireServerDocument(page: Page, stageId: string): Promise<void> {
+  const response = await page.request.delete(
+    `/api/persistence/documents/${encodeURIComponent(stageId)}`,
+  );
+  if (response.status() === 204 || response.status() === 404) return;
+  throw new Error(`Retiring course ${stageId} failed: HTTP ${response.status()}`);
+}
+
 /** Remember which scene the editor opens a course on (device-local state). */
 export async function setCurrentScene(page: Page, stageId: string, sceneId: string): Promise<void> {
   await page.evaluate(

@@ -142,23 +142,13 @@ ComfyUI Image не требует API key, по умолчанию подклю�
 Формат материалов зависит от выбранного парсера. Поддерживаются текст, PDF, Office-документы, изображения и часть аудио/видео форматов; возможности зависят от провайдера.
 
 ```bash
-# MinerU self-hosted
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU self-hosted опциональный backend
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
 # AliDocMind (использует AccessKey Alibaba Cloud, а не отдельный API key)
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # опциональное переопределение
 ```
 
-`unpdf` встроен в OpenMAIC и подходит для базового разбора PDF. Для Office-документов, изображений и материалов с OCR, таблицами, формулами или сложной версткой рекомендуется MinerU или AliDocMind.
+`unpdf` встроен в OpenMAIC и подходит для базового разбора PDF. Для Office-документов, изображений и материалов с OCR, таблицами, формулами или сложной версткой рекомендуется AliDocMind.
 
 AliDocMind поддерживает PDF, DOCX, PPTX, XLSX, а также PNG, JPG/JPEG, BMP, GIF. Текущая поддержка аудио/видео через AliDocMind: видео форматы MP4, MOV, AVI, MKV, WMV; аудио MP3, WAV, AAC. M4A не поддерживается.
 
@@ -288,8 +278,6 @@ asr:
     apiKey: sk-...
 
 pdf:
-  mineru:
-    baseUrl: http://localhost:8888
   alidocmind:
     accessKeyId: your-access-key-id
     accessKeySecret: your-access-key-secret
@@ -311,4 +299,4 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Ключи должны совпадать с зарегистрированными в коде ID провайдеров, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily` или `searxng`. Неизвестные ID нельзя использовать для регистрации кастомных LLM провайдеров.
+Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Ключи должны совпадать с зарегистрированными в коде ID провайдеров, например `openai`, `doubao-tts`, `openai-whisper`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily` или `searxng`. Неизвестные ID нельзя использовать для регистрации кастомных LLM провайдеров.

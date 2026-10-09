@@ -5,6 +5,7 @@ import { ACCESS_TOKEN_MAX_AGE_SECONDS } from '@/lib/server/access-token-shared';
 import { createAccessToken } from '@/lib/server/access-token';
 import { accessCodeAttemptLimiter } from '@/lib/server/attempt-limiter';
 import { clientIdentity, isTrustedProxyIdentity } from '@/lib/server/client-identity';
+import { cookiesUseSecureAttribute } from '@/lib/server/secure-cookies';
 import { warnIfAccessCodeIsShort } from '@/lib/server/access-code-warning';
 
 /**
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
     sameSite: 'lax',
     path: '/',
     maxAge: ACCESS_TOKEN_MAX_AGE_SECONDS,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookiesUseSecureAttribute(),
   });
 
   return apiSuccess({ valid: true });

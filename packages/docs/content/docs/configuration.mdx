@@ -142,23 +142,13 @@ Video generation providers use `VIDEO_<PROVIDER>_API_KEY` and optionally `VIDEO_
 The exact course-material formats depend on the selected parser. OpenMAIC currently supports text, PDF, Office documents, images, and some audio/video formats; supported formats and capabilities vary by provider.
 
 ```bash
-# MinerU self-hosted
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# Optional backend for self-hosted MinerU
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
 # AliDocMind (uses Alibaba Cloud AccessKey, not a separate API key)
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # optional override
 ```
 
-`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU or AliDocMind provider.
+`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select the AliDocMind provider.
 
 AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
 
@@ -288,8 +278,6 @@ asr:
     apiKey: sk-...
 
 pdf:
-  mineru:
-    baseUrl: http://localhost:8888
   alidocmind:
     accessKeyId: your-access-key-id
     accessKeySecret: your-access-key-secret
@@ -311,4 +299,4 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
+Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.

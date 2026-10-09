@@ -9,7 +9,7 @@
  * whole document forward via the DSL migration ladder. The pluggable seam is the
  * backend, not the database driver — every backend satisfies one contract test.
  */
-import type { Stage, Scene } from '@openmaic/dsl';
+import type { LessonKind, Stage, Scene } from '@openmaic/dsl';
 
 /**
  * The minimal scene shape the store itself depends on — the fields it uses to
@@ -163,6 +163,23 @@ export interface DocumentSummary {
   sceneCount: number;
   /** Owner-scoped folder membership. Omitted when the document is unfiled. */
   folderId?: string;
+  /**
+   * The stage's `sourceDigests`, when it has any: the materials this course was
+   * generated from. Carried on the summary so a caller can tell whether some
+   * material has already been turned into a course without loading documents.
+   */
+  sourceDigests?: string[];
+  /**
+   * Which kind of lesson this row is — `'lesson'` when absent, so a course
+   * generated before the field existed reads as an ordinary teaching lesson.
+   *
+   * Carried here for the same reason `sourceDigests` is: the picker has to tell
+   * a quiz classroom apart from the teaching classroom made from the *same*
+   * material — they share every digest — to decide which one a re-upload
+   * refers to. Like `sourceDigests` it lives only in the stage JSONB, with no
+   * column of its own.
+   */
+  lessonKind?: LessonKind;
 }
 
 /** A durable owner-scoped folder, including folders that currently have no documents. */

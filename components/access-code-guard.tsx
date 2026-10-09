@@ -3,6 +3,7 @@
 import { useEffect, useState, ReactNode } from 'react';
 import { AccessCodeModal } from '@/components/access-code-modal';
 import { useSettingsStore } from '@/lib/store/settings';
+import { LIBRARY_CHANGED_EVENT } from '@/lib/utils/stage-storage';
 
 export function AccessCodeGuard({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<{
@@ -51,6 +52,14 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
             // provider reads as unconfigured until a manual reload. Re-fetch
             // now that the request will be authorized.
             void useSettingsStore.getState().fetchServerProviders();
+            // The library load is caught by the very same 401, for the very
+            // same reason: the home page's mount effect runs before the cookie
+            // exists, and nothing asks again — so an unlocked browser still
+            // showed an empty library (no folders) until a manual reload.
+            // Broadcasting "library changed" makes it list courses, thumbnails
+            // and folders again; the home page already listens for this event,
+            // so no new coupling is introduced.
+            window.dispatchEvent(new Event(LIBRARY_CHANGED_EVENT));
           }}
         />
       )}

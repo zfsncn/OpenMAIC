@@ -113,7 +113,7 @@ vi.mock('@/lib/audio/types', () => ({
 vi.mock('@/lib/pdf/constants', () => ({
   PDF_PROVIDERS: {
     unpdf: { id: 'unpdf', requiresApiKey: false },
-    mineru: { id: 'mineru', requiresApiKey: false },
+    alidocmind: { id: 'alidocmind', requiresApiKey: true },
   },
 }));
 
@@ -1586,12 +1586,12 @@ describe('fetchServerProviders — PDF stale selection', () => {
     return useSettingsStore;
   }
 
-  it('falls back to unpdf when mineru loses server config', async () => {
+  it('falls back to unpdf when alidocmind loses server config', async () => {
     const store = await getStore();
 
-    mockServerResponse({ pdf: { mineru: {} } });
+    mockServerResponse({ pdf: { alidocmind: {} } });
     await store.getState().fetchServerProviders();
-    store.getState().setPDFProvider('mineru');
+    store.getState().setPDFProvider('alidocmind');
 
     mockServerResponse({});
     await store.getState().fetchServerProviders();

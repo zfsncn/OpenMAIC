@@ -60,6 +60,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   delete process.env.ACCESS_CODE;
   delete process.env.TRUST_PROXY_HEADERS;
 });
@@ -212,6 +213,46 @@ describe('POST /api/access-code/verify — cookie', () => {
     expect(mocks.cookieSet).toHaveBeenCalledTimes(1);
     const [, , options] = mocks.cookieSet.mock.calls[0];
     expect(options.maxAge).toBe(ACCESS_TOKEN_MAX_AGE_SECONDS);
+  });
+
+  /** The attributes the cookie was set with, for the single successful call. */
+  async function cookieAttributes(): Promise<Record<string, unknown>> {
+    const POST = await loadPost();
+    const res = await POST(verifyRequest(ACCESS_CODE));
+    expect(res.status).toBe(200);
+    expect(mocks.cookieSet).toHaveBeenCalledTimes(1);
+    const [, , options] = mocks.cookieSet.mock.calls[0];
+    return options as Record<string, unknown>;
+  }
+
+  it('marks the access cookie Secure in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('COOKIE_SECURE', undefined);
+
+    expect((await cookieAttributes()).secure).toBe(true);
+  });
+
+  // Plain-HTTP deployments opt out: a `Secure` cookie served over
+  // http://<lan-ip> is dropped by the browser, so the access code could never
+  // stick. Only the exact value `0` opts out.
+  it('omits Secure in production when COOKIE_SECURE=0', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('COOKIE_SECURE', '0');
+
+    expect((await cookieAttributes()).secure).toBe(false);
+  });
+
+  it('treats any other COOKIE_SECURE value as "leave Secure on"', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('COOKIE_SECURE', '1');
+
+    expect((await cookieAttributes()).secure).toBe(true);
+  });
+
+  it('never sets Secure outside production, whatever COOKIE_SECURE says', async () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('COOKIE_SECURE', undefined);
+    expect((await cookieAttributes()).secure).toBe(false);
   });
 });
 

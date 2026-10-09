@@ -23,7 +23,78 @@ function requiredString(
   }
 }
 
-/** Validate the app's four-way scene union at the document write boundary. */
+/**
+ * Shape checks shared by a case scene and each of its saved variants.
+ *
+ * A variant is a case minus its discriminant, and the swap action mirrors one
+ * of them into the fields a reader uses — so the two must be checked by the
+ * same rules, or a malformed variant would pass as an opaque object and then
+ * be mirrored into the page. `basePath` keeps an error pointing at whichever
+ * of the two it came from.
+ *
+ * Everything here is shape, not content — a case the API just created is
+ * structurally complete with empty text, and rejecting it would make "add a
+ * case scene" unsavable.
+ */
+function validateCaseShape(
+  content: Record<string, unknown>,
+  basePath: string,
+  errors: ValidationIssue[],
+): void {
+  for (const key of ['caseTitle', 'narrative', 'summary'] as const) {
+    if (content[key] !== undefined && typeof content[key] !== 'string') {
+      errors.push({
+        path: `${basePath}/${key}`,
+        message: `\`${key}\` must be a string when present`,
+      });
+    }
+  }
+  // A display flag rather than content, and checked for the same reason: the
+  // renderer tests `=== true`, so a stray non-boolean would read as "shown" for
+  // `"true"` and as "hidden" for `1` — a mismatch nothing else would catch.
+  if (content.analysisHidden !== undefined && typeof content.analysisHidden !== 'boolean') {
+    errors.push({
+      path: `${basePath}/analysisHidden`,
+      message: '`analysisHidden` must be a boolean when present',
+    });
+  }
+  // The three lists are what the renderer and the analysis pass read, so a
+  // non-array (or an array holding non-strings) is corruption rather than an
+  // empty case; an *absent* list is tolerated the way the renderer tolerates
+  // it, and a missing `sources` array is how "no citation" is expressed.
+  for (const key of ['knowledgePoints', 'discussionQuestions', 'sources'] as const) {
+    const list = content[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) {
+      errors.push({
+        path: `${basePath}/${key}`,
+        message: `\`${key}\` must be an array when present`,
+      });
+      continue;
+    }
+    if (key !== 'knowledgePoints') continue;
+    list.forEach((point, index) => {
+      if (typeof point !== 'string') {
+        errors.push({
+          path: `${basePath}/${key}/${index}`,
+          message: 'knowledge point must be a string',
+        });
+      }
+    });
+  }
+}
+
+/**
+ * Validate the app's five-way scene union at the document write boundary.
+ *
+ * ⚠️ This is the one place a new `SceneType` must be registered by hand: every
+ * other dispatch site is a `Record<SceneType, …>` or a `switch`, so the DSL's
+ * compile-time exhaustiveness check finds it. This function compares against
+ * literal strings instead, so adding a scene type without touching it fails
+ * **silently at runtime** — the store answers `400 VALIDATION_FAILED` and,
+ * because `/api/persistence/**` only logs `status >= 500`, nothing appears in
+ * the container logs while the write is quietly dropped.
+ */
 export const validateAppScene: SceneValidator = (scene) => {
   const value = objectValue(scene);
   if (!value) {
@@ -40,7 +111,7 @@ export const validateAppScene: SceneValidator = (scene) => {
   }
 
   const content = objectValue(value.content);
-  if (value.type !== 'interactive' && value.type !== 'pbl') {
+  if (value.type !== 'interactive' && value.type !== 'pbl' && value.type !== 'case') {
     errors.push({
       path: '/type',
       message: `unknown app scene type: ${JSON.stringify(value.type)}`,
@@ -106,6 +177,57 @@ export const validateAppScene: SceneValidator = (scene) => {
       path: '/content/projectV2',
       message: '`projectV2` must contain milestones, roles and threads arrays',
     });
+  } else if (value.type === 'case') {
+    // Shape, not content — the same rule the interactive branch follows
+    // (`html` *or* `url` as a string), and for the same reason: a scene the API
+    // just created (`createDefaultCaseContent()`) is structurally complete with
+    // empty text, and rejecting it would make "add a case scene" unsavable.
+    // An empty case renders as an empty reading page, which is what the author
+    // is about to fill in.
+    validateCaseShape(content, '/content', errors);
+
+    // The variant list is the chapter's three-case cache. Optional, and its
+    // absence is not an error: a document written before variants existed holds
+    // exactly one case, expressed by the fields above. When present it must
+    // hold *cases* — the swap action mirrors one entry into the fields every
+    // reader uses, so a malformed entry would surface as a blank page instead
+    // of as a failed write.
+    if (content.caseVariants !== undefined) {
+      if (!Array.isArray(content.caseVariants)) {
+        errors.push({
+          path: '/content/caseVariants',
+          message: '`caseVariants` must be an array when present',
+        });
+      } else {
+        content.caseVariants.forEach((variant, index) => {
+          if (variant === null || typeof variant !== 'object' || Array.isArray(variant)) {
+            errors.push({
+              path: `/content/caseVariants/${index}`,
+              message: 'case variant must be an object',
+            });
+            return;
+          }
+          validateCaseShape(
+            variant as Record<string, unknown>,
+            `/content/caseVariants/${index}`,
+            errors,
+          );
+        });
+      }
+    }
+
+    // The mirror step indexes the list with this. A non-integer or negative
+    // value mirrors `undefined` into `caseTitle` and blanks the page, so it is
+    // rejected at the write boundary rather than clamped at render time.
+    if (content.activeVariantIndex !== undefined) {
+      const index = content.activeVariantIndex;
+      if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+        errors.push({
+          path: '/content/activeVariantIndex',
+          message: '`activeVariantIndex` must be a non-negative integer when present',
+        });
+      }
+    }
   }
 
   // The app-only branch historically never looked at `actions`, so a

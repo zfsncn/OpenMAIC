@@ -47,7 +47,7 @@ interface OutlinesEditorProps {
   onCollapse?: () => void;
 }
 
-const SCENE_TYPES: SceneType[] = ['slide', 'quiz', 'interactive', 'pbl'];
+const SCENE_TYPES: SceneType[] = ['slide', 'quiz', 'interactive', 'pbl', 'case'];
 
 const TYPE_THEME: Record<
   SceneType,
@@ -82,6 +82,12 @@ const TYPE_THEME: Record<
     accent: 'bg-amber-500',
     dot: 'bg-amber-400',
   },
+  case: {
+    chip: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
+    chipHover: 'hover:bg-teal-100/80 dark:hover:bg-teal-500/15',
+    accent: 'bg-teal-500',
+    dot: 'bg-teal-400',
+  },
 };
 
 function normalizeOrder(outlines: SceneOutline[]): SceneOutline[] {
@@ -101,6 +107,8 @@ function useSceneTypeLabel() {
         return t('generation.sceneTypeInteractive');
       case 'pbl':
         return t('generation.sceneTypePbl');
+      case 'case':
+        return t('generation.sceneTypeCase');
       case 'slide':
       default:
         return t('generation.sceneTypeSlide');

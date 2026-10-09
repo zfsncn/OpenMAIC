@@ -13,9 +13,12 @@ import {
 import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { ensureAppKvSchema } from '@/lib/persistence/app-kv';
 import { configuredLazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
+import { ensureMaterialExtractionSchema } from '@/lib/persistence/material-extraction';
+import { ensureMaterialImageBlobSchema } from '@/lib/persistence/material-image-blob';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
@@ -78,6 +81,9 @@ async function createServerPersistenceProvider(
       await ensureDocumentSchema(locked);
       await ensureStageMetaSchema(locked);
       await ensureOwnerMaterialSchema(locked);
+      await ensureMaterialExtractionSchema(locked);
+      await ensureMaterialImageBlobSchema(locked);
+      await ensureAppKvSchema(locked);
       await ensureAssetSchema(locked);
     });
     const withTransaction = nodePostgresTransaction(queryable);

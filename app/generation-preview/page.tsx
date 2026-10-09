@@ -24,6 +24,8 @@ import {
   fetchSceneActions,
   fetchSceneContent,
   generateTTSForScene,
+  getApiHeaders,
+  withThinkingConfig,
 } from '@/lib/hooks/use-scene-generator';
 import { isAbortError } from '@openmaic/generation/browser';
 import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
@@ -33,8 +35,18 @@ import {
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
-import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
+import {
+  fetchArchivedExtraction,
+  type ArchivedExtraction,
+  type ParsedDocumentResponseImage,
+} from '@/lib/document/extraction-archive-client';
+import { requestCourseMaterialExtraction } from '@/lib/document/extraction-stream-client';
+import {
+  forgetExtractionResume,
+  recallExtractionResume,
+  rememberExtractionResume,
+} from '@/lib/document/extraction-resume-store';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
@@ -43,7 +55,12 @@ import {
   type ParsedDocumentPart,
 } from '@/lib/document/bundle';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
+import { collectCaseResearch } from '@/lib/classroom/case-research';
+import { createCaseWebSearchFn } from '@/lib/classroom/case-web-search';
 import { nanoid } from 'nanoid';
+import { COMPOSER_DRAFT_KEY, resetHomeComposer } from '@/lib/home/composer-reset';
+import { setStageFolder } from '@/lib/utils/stage-storage';
+import { toast } from 'sonner';
 import type { GeneratedAgentConfig, Stage } from '@/lib/types/stage';
 import type {
   SceneOutline,
@@ -57,6 +74,8 @@ import {
   type GenerationSessionState,
   ALL_STEPS,
   getActiveSteps,
+  getExtractionFailureKey,
+  getExtractionProgressText,
   getGenerationStepText,
 } from './types';
 import { StepVisualizer } from './components/visualizers';
@@ -65,13 +84,12 @@ import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 
-type ParsedDocumentResponseImage = {
-  id: string;
-  src?: string;
-  pageNumber?: number;
-  description?: string;
-  width?: number;
-  height?: number;
+/** Provider configuration a source may carry to the extraction route. */
+type SourceProviderConfig = {
+  apiKey?: string;
+  baseUrl?: string;
+  accessKeyId?: string;
+  accessKeySecret?: string;
 };
 
 function validateDocumentSources(
@@ -123,6 +141,9 @@ function GenerationPreviewContent() {
   const [webSearchSources, setWebSearchSources] = useState<Array<{ title: string; url: string }>>(
     [],
   );
+  const [caseResearchSources, setCaseResearchSources] = useState<
+    Array<{ title: string; url: string }>
+  >([]);
   const [showAgentReveal, setShowAgentReveal] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
@@ -250,41 +271,6 @@ function GenerationPreviewContent() {
     };
   }, []);
 
-  // Get API credentials from localStorage
-  const getApiHeaders = () => {
-    const modelConfig = getCurrentModelConfig();
-    const settings = useSettingsStore.getState();
-    const imageProviderConfig = settings.imageProvidersConfig?.[settings.imageProviderId];
-    const videoProviderConfig = settings.videoProvidersConfig?.[settings.videoProviderId];
-    const stageRoutesHeader = getStageRoutesHeaderValue();
-    return {
-      'Content-Type': 'application/json',
-      ...(stageRoutesHeader ? { 'x-model-routes': stageRoutesHeader } : {}),
-      'x-model': modelConfig.modelString,
-      'x-api-key': modelConfig.apiKey,
-      'x-base-url': modelConfig.baseUrl,
-      'x-provider-type': modelConfig.providerType || '',
-      // Image generation provider
-      'x-image-provider': settings.imageProviderId || '',
-      'x-image-model': settings.imageModelId || '',
-      'x-image-api-key': imageProviderConfig?.apiKey || '',
-      'x-image-base-url': imageProviderConfig?.baseUrl || '',
-      // Video generation provider
-      'x-video-provider': settings.videoProviderId || '',
-      'x-video-model': settings.videoModelId || '',
-      'x-video-api-key': videoProviderConfig?.apiKey || '',
-      'x-video-base-url': videoProviderConfig?.baseUrl || '',
-      // Media generation toggles
-      'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
-      'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
-    };
-  };
-
-  const withThinkingConfig = <T extends Record<string, unknown>>(body: T) => {
-    const { thinkingConfig } = getCurrentModelConfig();
-    return thinkingConfig ? { ...body, thinkingConfig } : body;
-  };
-
   // Auto-start generation when session is loaded
   useEffect(() => {
     if (!session || hasStartedRef.current) return;
@@ -339,24 +325,38 @@ function GenerationPreviewContent() {
         log.debug('=== Generation Preview: Extracting course material bundle ===');
         validateDocumentSources(documentSources, t);
         const sortedDocumentSources = [...documentSources].sort((a, b) => a.order - b.order);
-        const parsedParts = await Promise.all(
-          sortedDocumentSources.map(async (source): Promise<ParsedDocumentPart> => {
-            const providerId = source.providerId || currentSession.pdfProviderId;
-            const legacySourceConfig = (
-              source as SessionDocumentSource & {
-                providerConfig?: {
-                  apiKey?: string;
-                  baseUrl?: string;
-                  accessKeyId?: string;
-                  accessKeySecret?: string;
-                };
-              }
-            ).providerConfig;
-            const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
-            const documentBlob = await loadDocumentBlob(source.storageKey);
-            if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
-              throw new Error(t('generation.courseMaterialLoadFailed'));
+        /**
+         * The extracted content of one source, from whichever of the two
+         * places this device can reach.
+         *
+         * **The bytes** (this device's IndexedDB) are the preferred source, and
+         * the only one that can run a fresh parse: they are what the chapter
+         * directory stores locally, and a chapter uploaded on this device
+         * always has them.
+         *
+         * **The archive** (the server, keyed by `contentDigest`) is the
+         * fallback for a chapter restored from the synced directory on a
+         * device that never held its bytes. Without it such a chapter could be
+         * listed but not generated from, because a parse needs bytes and there
+         * are none; with it, the extraction paid for on the other device is
+         * reused and the chapter generates with no re-upload. The bytes and
+         * the digest name the same content (`lib/document/content-digest.ts`),
+         * so the two sources cannot disagree about *what* was parsed — only
+         * about which device paid for it.
+         */
+        const parseSource = async (
+          source: SessionDocumentSource,
+        ): Promise<{ providerId: string | undefined; parseData: ArchivedExtraction }> => {
+          const providerId = source.providerId || currentSession.pdfProviderId;
+          const legacySourceConfig = (
+            source as SessionDocumentSource & {
+              providerConfig?: SourceProviderConfig;
             }
+          ).providerConfig;
+          const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
+
+          const documentBlob = await loadDocumentBlob(source.storageKey);
+          if (documentBlob instanceof Blob && documentBlob.size > 0) {
             const documentFile = new File([documentBlob], source.name || 'document.pdf', {
               type: source.mimeType || documentBlob.type || 'application/pdf',
             });
@@ -373,17 +373,80 @@ function GenerationPreviewContent() {
             if (providerConfig?.accessKeySecret?.trim()) {
               parseFormData.append('accessKeySecret', providerConfig.accessKeySecret);
             }
-            const parseResponse = await fetch('/api/extract-document', {
-              method: 'POST',
-              body: parseFormData,
-              signal,
-            });
-            if (!parseResponse.ok) throw new Error(t('generation.courseMaterialParseFailed'));
-            const parseResult = await parseResponse.json();
-            if (!parseResult.success || !parseResult.data) {
-              throw new Error(t('generation.courseMaterialParseFailed'));
+            // A handle an earlier attempt left behind means these exact bytes
+            // are already queued on *that extractor's* side. Handing it back
+            // picks that job up instead of paying for a second parse of the
+            // same file; a handle belonging to another extractor is not ours to
+            // hand back, and the store will not release it.
+            const resumeToken = recallExtractionResume(source.contentDigest, providerId);
+            if (resumeToken) {
+              parseFormData.append('resumeToken', resumeToken);
+              setStatusMessage(
+                t('generation.courseMaterialExtractResuming', { name: source.name }),
+              );
             }
-            const parseData = parseResult.data;
+
+            const outcome = await requestCourseMaterialExtraction(parseFormData, {
+              signal,
+              onProgress: (progress) => {
+                const { key, values } = getExtractionProgressText(source.name, progress);
+                setStatusMessage(t(key, values));
+              },
+            });
+            if (outcome.status === 'failed') {
+              // Keep the handle for the next attempt so a retry can resume this
+              // job; drop it when the server named no job to resume, because
+              // then the remembered one is certainly dead. Either way the
+              // message is chosen from the classified kind, never from the
+              // server's own unlocalized prose.
+              if (outcome.resumeToken) {
+                rememberExtractionResume(source.contentDigest, outcome.resumeToken, providerId);
+              } else {
+                forgetExtractionResume(source.contentDigest);
+              }
+              throw new Error(t(getExtractionFailureKey(outcome.kind)));
+            }
+            forgetExtractionResume(source.contentDigest);
+            return { providerId, parseData: outcome.data };
+          }
+
+          // No bytes here. A source without a digest has nothing to look up —
+          // either it was uploaded before the directory carried digests, or
+          // this browser cannot compute one (no secure context). Both are the
+          // old "select the file again" case.
+          if (!source.contentDigest) {
+            throw new Error(t('generation.courseMaterialLoadFailed'));
+          }
+          const archived = await fetchArchivedExtraction({
+            contentDigest: source.contentDigest,
+            ...(providerId ? { extractorId: providerId } : {}),
+            signal,
+          });
+          if (!archived) {
+            // Actionable on purpose: retrying the same request cannot help, and
+            // the archive cannot say *why* it has nothing (never archived, or
+            // pruned). Re-uploading the file is the one fix that always works.
+            throw new Error(t('generation.courseMaterialNotArchived', { name: source.name }));
+          }
+          const archivedExtractor = archived.metadata?.extractionCache?.extractorId;
+          // The server prefers the requested extractor and falls back to the
+          // newest non-empty derivation (see `selectArchivedExtraction`), so a
+          // different id here is expected when this device's settings differ
+          // from the uploading device's. Worth logging because it changes the
+          // text, not just where the text came from.
+          log.debug(
+            `"${source.name}": no bytes on this device; using the archived extraction ` +
+              `(${archivedExtractor ?? 'unknown'})` +
+              (archivedExtractor && providerId && archivedExtractor !== providerId
+                ? `, not the selected ${providerId}`
+                : ''),
+          );
+          return { providerId, parseData: archived };
+        };
+
+        const parsedParts = await Promise.all(
+          sortedDocumentSources.map(async (source): Promise<ParsedDocumentPart> => {
+            const { providerId, parseData } = await parseSource(source);
             const rawImages = parseData.metadata?.pdfImages;
             const images = rawImages
               ? rawImages.map((img: ParsedDocumentResponseImage) => ({
@@ -409,9 +472,12 @@ function GenerationPreviewContent() {
                 mimeType: source.mimeType,
                 order: source.order,
                 providerId,
+                // Carried through so the bundle keeps naming the derivation the
+                // source bytes correspond to (the digest computed at upload).
+                ...(source.contentDigest ? { contentDigest: source.contentDigest } : {}),
               },
-              text: parseData.text as string,
-              rawTextLength: (parseData.text as string).length,
+              text: parseData.text,
+              rawTextLength: parseData.text.length,
               pageCount: parseData.metadata?.pageCount,
               images,
             };
@@ -465,9 +531,30 @@ function GenerationPreviewContent() {
           setTruncationWarnings(warnings);
         }
 
+        // The extraction's progress line has served its purpose: the next step
+        // either sets its own or falls back to the step's description.
+        setStatusMessage('');
+
         // Reassign local reference for subsequent steps
         currentSession = updatedSession;
         activeSteps = getActiveSteps(currentSession);
+      }
+
+      // ── An extract-only session stops here ──
+      // These materials already belong to a classroom (matched by its
+      // `sourceDigests`); the file was re-uploaded to fill in the derivation
+      // the classroom's chapters need, not to build a second course from the
+      // same material. Step 0 above is the whole job — the extract route
+      // archives the derivation as a side effect — so hand back to the
+      // classroom it belongs to and write nothing: no stage, no outline, no
+      // scene, no `store.saveToStorage()`.
+      if (currentSession.extractOnly) {
+        const target = currentSession.targetStageId;
+        sessionStorage.removeItem('generationSession');
+        // The home page always sets a target; a session without one is
+        // corrupt, and the home page is the only safe place to fall back to.
+        router.replace(target ? `/classroom/${target}` : '/');
+        return;
       }
 
       // Step: Web Search (if enabled)
@@ -534,6 +621,21 @@ function GenerationPreviewContent() {
 
       // Create stage client-side
       const stageId = nanoid(10);
+      // Which materials this classroom was built from, in bundle order, taken
+      // from the same sources Step 0 just parsed. Written once, at creation: it
+      // is the only record of the link — the extraction archive is keyed by
+      // `(bytes, extractor)` and knows nothing about classrooms — and it is what
+      // lets a later re-upload of the same file find this classroom instead of
+      // producing a second one from identical material. Omitted entirely when no
+      // source carries a digest (a legacy session, or a browser that could not
+      // compute one): an empty list would claim the classroom came from nothing.
+      const sourceDigests = [
+        ...new Set(
+          documentSources
+            .map((source) => source.contentDigest)
+            .filter((digest): digest is string => typeof digest === 'string' && digest.length > 0),
+        ),
+      ];
       const stage: Stage = {
         id: stageId,
         name: extractTopicFromRequirement(currentSession.requirements.requirement),
@@ -543,12 +645,36 @@ function GenerationPreviewContent() {
         updatedAt: Date.now(),
         interactiveMode: !!currentSession.requirements.interactiveMode,
         taskEngineMode: currentSession.taskEngineMode === true,
+        ...(sourceDigests.length > 0 ? { sourceDigests } : {}),
+        // Which kind of lesson this is. It has to be recorded here rather than
+        // inferred later: a single-chapter lesson carries the *same*
+        // `sourceDigests` as the teaching classroom built from the same
+        // material, so this field is the only thing that lets the home page
+        // reopen the right one. `'lesson'` is the default and is never stamped
+        // — absent already reads as an ordinary teaching classroom, and writing
+        // it would rewrite every course generated before this field existed.
+        ...(currentSession.requirements.lessonKind &&
+        currentSession.requirements.lessonKind !== 'lesson'
+          ? { lessonKind: currentSession.requirements.lessonKind }
+          : {}),
       };
 
       // ── Generate outlines first (infers languageDirective) ──
       let outlines = currentSession.sceneOutlines;
       let languageDirective = currentSession.languageDirective;
       let courseTitle = currentSession.courseTitle;
+      /**
+       * Case-teaching research, gathered once the knowledge points exist.
+       *
+       * Kept in local scope rather than on the session: unlike `researchContext`
+       * (which is produced before the outline request and read by it, so it has
+       * to survive a resume), this is consumed by a single later request in the
+       * same run. A resumed session simply researches again, which is cheaper
+       * than persisting a large text blob the next run would have to invalidate
+       * when the knowledge points change.
+       */
+      let caseContext: string | undefined;
+      let caseSources: Array<{ title: string; url: string }> | undefined;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
@@ -710,7 +836,7 @@ function GenerationPreviewContent() {
         // safe to wipe the homepage draft cache; before this point, "back to
         // requirements" must restore the user's original input.
         try {
-          localStorage.removeItem('requirementDraft');
+          localStorage.removeItem(COMPOSER_DRAFT_KEY);
         } catch {
           /* ignore */
         }
@@ -732,6 +858,66 @@ function GenerationPreviewContent() {
       // replacing the raw-requirement placeholder set at stage creation time.
       if (courseTitle) {
         stage.name = courseTitle;
+      }
+
+      // ── Case research (case teaching only, after outlines) ──
+      //
+      // A case study has to be a real event, and a model asked to recall one
+      // produces confident fiction. So the search runs here — after the outline
+      // has fixed the knowledge points, before the case is written — and the
+      // content step is handed what the search actually returned.
+      //
+      // This sits after the outline rather than alongside the `web-search` step
+      // because the queries ARE the knowledge points: searching the raw
+      // requirement would return material for the chapter's topic in general,
+      // which is exactly the "illustrates the theme without teaching the points"
+      // case the outline step exists to prevent.
+      //
+      // Every failure here degrades to "no research": the case is then written
+      // from well-documented events and the learner is told the material was not
+      // drawn from verified reporting. Research must never be the reason a
+      // classroom fails to generate.
+      const caseSearchStepIdx = activeSteps.findIndex((s) => s.id === 'case-search');
+      if (caseSearchStepIdx >= 0) {
+        setCurrentStepIndex(caseSearchStepIdx);
+        setStatusMessage(t('generation.caseResearching'));
+        setCaseResearchSources([]);
+
+        try {
+          const wsSettings = useSettingsStore.getState();
+          const wsProviderId = wsSettings.webSearchProviderId;
+          const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
+
+          // Pages shown as they arrive rather than after the slowest query: the
+          // step indicator is the user's only signal that six searches are
+          // progressing rather than one hanging request.
+          const outcome = await collectCaseResearch({
+            knowledgePoints: outlines[0]?.keyPoints ?? [],
+            search: createCaseWebSearchFn(
+              {
+                providerId: wsProviderId,
+                apiKey: wsConfig?.apiKey,
+                baseUrl: wsConfig?.baseUrl,
+                baiduSubSources: wsSettings.baiduSubSources,
+                claudeModelId: wsConfig?.modelId,
+              },
+              { signal, onSources: setCaseResearchSources },
+            ),
+          });
+
+          caseContext = outcome.caseContext || undefined;
+          caseSources = outcome.sources.length > 0 ? outcome.sources : undefined;
+          setCaseResearchSources(outcome.sources);
+          log.info(
+            `Case research: ${outcome.answeredPoints}/${outcome.searchedPoints} knowledge point(s) returned material, ${outcome.sources.length} source(s)`,
+          );
+        } catch (err: unknown) {
+          // `collectCaseResearch` already absorbs per-query failures, so
+          // reaching here means the fan-out itself broke (most likely an abort).
+          log.warn('[Generation] Case research failed, generating without it:', err);
+          caseContext = undefined;
+          caseSources = undefined;
+        }
       }
 
       // ── Agent generation (after outlines — uses languageDirective + outlines) ──
@@ -979,6 +1165,9 @@ function GenerationPreviewContent() {
           agents,
           languageDirective,
           requirements: currentSession.requirements,
+          // Case-only; absent for every other scene type.
+          ...(caseContext ? { caseContext } : {}),
+          ...(caseSources ? { caseSources } : {}),
         },
         signal,
         FOREGROUND_SCENE_RETRY_OPTIONS,
@@ -1050,7 +1239,23 @@ function GenerationPreviewContent() {
       );
 
       sessionStorage.removeItem('generationSession');
-      await store.saveToStorage();
+      const saved = await store.saveToStorage();
+      // File the course into the folder the user generated from. This is
+      // strictly after the save: the stage row is INSERTed inside
+      // `saveToStorage`, and `setStageFolder` is an UPDATE that matches zero
+      // rows — answering 404 FOLDER_NOT_FOUND — until that row exists. A save
+      // that returns false was dropped (stale epoch) and persisted nothing, so
+      // filing would 404 as well.
+      if (saved && currentSession.targetFolderId) {
+        try {
+          await setStageFolder(stage.id, currentSession.targetFolderId);
+        } catch (err) {
+          // Filing is best-effort: the course is openable either way, it just
+          // lands in the root view — exactly the behaviour before this feature.
+          log.error('[GenerationPreview] Failed to file course into folder:', err);
+          toast.error(t('classroom.moveFailed'));
+        }
+      }
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
       setIsOutlineStreaming(false);
@@ -1078,6 +1283,27 @@ function GenerationPreviewContent() {
     outlineReviewIntentRef.current = false;
     sessionStorage.removeItem('generationSession');
     router.push('/');
+  };
+
+  /**
+   * "Back to home", from the two buttons that carry exactly that label (the
+   * outline-review header and the generating header), plus the dead-end
+   * session-not-found card. It is the same gesture the classroom's own back
+   * arrow performs, so the composer is left as clean as that arrow leaves it —
+   * see `resetHomeComposer`.
+   *
+   * The other `goBackToHome` callers are deliberately NOT routed through here,
+   * because they are not that gesture despite landing on the same page:
+   *
+   * - `OutlinesEditor`'s back is labeled "back to requirements" and exists so
+   *   the typed prompt survives the trip (see the commit point below, which
+   *   wipes the draft cache only once the outline is confirmed).
+   * - The error footer's "go back and retry" returns to the composer to resume
+   *   the request that just failed.
+   */
+  const leaveToHome = () => {
+    resetHomeComposer();
+    goBackToHome();
   };
 
   // Triggered when the user clicks the streaming outline card mid-stream.
@@ -1210,7 +1436,7 @@ function GenerationPreviewContent() {
             <AlertCircle className="size-12 text-muted-foreground mx-auto" />
             <h2 className="text-xl font-semibold">{t('generation.sessionNotFound')}</h2>
             <p className="text-sm text-muted-foreground">{t('generation.sessionNotFoundDesc')}</p>
-            <Button onClick={() => router.push('/')} className="w-full">
+            <Button onClick={leaveToHome} className="w-full">
               <ArrowLeft className="size-4 mr-2" />
               {t('generation.backToHome')}
             </Button>
@@ -1242,7 +1468,7 @@ function GenerationPreviewContent() {
           animate={{ opacity: 1, y: 0 }}
           className="absolute top-4 left-4 z-20"
         >
-          <Button variant="ghost" size="sm" onClick={goBackToHome} disabled={isConfirmingOutlines}>
+          <Button variant="ghost" size="sm" onClick={leaveToHome} disabled={isConfirmingOutlines}>
             <ArrowLeft className="size-4 mr-2" />
             {t('generation.backToHome')}
           </Button>
@@ -1324,7 +1550,7 @@ function GenerationPreviewContent() {
         animate={{ opacity: 1, y: 0 }}
         className="absolute top-4 left-4 z-20"
       >
-        <Button variant="ghost" size="sm" onClick={goBackToHome}>
+        <Button variant="ghost" size="sm" onClick={leaveToHome}>
           <ArrowLeft className="size-4 mr-2" />
           {t('generation.backToHome')}
         </Button>
@@ -1391,6 +1617,7 @@ function GenerationPreviewContent() {
                         stepId={activeStep.id}
                         outlines={session.sceneOutlines ?? streamingOutlines}
                         webSearchSources={webSearchSources}
+                        caseResearchSources={caseResearchSources}
                         onExpandOutline={
                           activeStep.id === 'outline' ? handleExpandStreamingOutline : undefined
                         }

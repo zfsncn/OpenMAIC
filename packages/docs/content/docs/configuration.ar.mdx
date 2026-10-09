@@ -142,23 +142,13 @@ ComfyUI Image لا يحتاج إلى مفتاح API، ويتصل افتراضي�
 تعتمد صيغ المواد التعليمية على المحلل المختار. حاليًا يدعم النصوص، PDF، مستندات Office، الصور، وبعض صيغ الصوت والفيديو؛ تختلف الصيغ المدعومة والقدرات حسب الموفر.
 
 ```bash
-# MinerU ذاتي الاستضافة
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU backend اختياري ذاتي الاستضافة
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
 # AliDocMind (يستخدم AccessKey من Alibaba Cloud بدلاً من مفتاح API منفصل)
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # تجاوز اختياري
 ```
 
-`unpdf` مدمج في OpenMAIC ويستخدم لتحليل PDF الأساسي. لتحليل مستندات Office، الصور، أو المواد التي تحتاج إلى OCR، جداول، معادلات أو تحليل تخطيط، يجب اختيار موفر MinerU أو AliDocMind المتوافق.
+`unpdf` مدمج في OpenMAIC ويستخدم لتحليل PDF الأساسي. لتحليل مستندات Office، الصور، أو المواد التي تحتاج إلى OCR، جداول، معادلات أو تحليل تخطيط، يجب اختيار موفر AliDocMind.
 
 يدعم AliDocMind تحليل PDF، DOCX، PPTX، XLSX، بالإضافة إلى PNG، JPG/JPEG، BMP، GIF. حاليًا، يدعم تحليل الوسائط الصوتية والفيديو فقط عبر AliDocMind: صيغ الفيديو MP4، MOV، AVI، MKV، WMV، وصيغ الصوت MP3، WAV، AAC؛ لا يدعم M4A.
 
@@ -288,8 +278,6 @@ asr:
     apiKey: sk-...
 
 pdf:
-  mineru:
-    baseUrl: http://localhost:8888
   alidocmind:
     accessKeyId: your-access-key-id
     accessKeySecret: your-access-key-secret
@@ -311,4 +299,4 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `exa`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.
+تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `alidocmind`، `seedream`، `seedance`، `exa`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.

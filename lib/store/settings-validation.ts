@@ -8,6 +8,15 @@
 export type ProviderCfgLike = {
   isServerConfigured?: boolean;
   apiKey?: string;
+  /**
+   * Pairs that authenticate with an Alibaba Cloud AccessKey id/secret
+   * (AliDocMind) rather than a single `apiKey`. The UI layer already accepts
+   * either shape (`generation-toolbar`, `pdf-settings`), so the store must
+   * too — otherwise a provider the user can select gets judged "no
+   * credentials" here and reverted to the fallback on every server sync.
+   */
+  accessKeyId?: string;
+  accessKeySecret?: string;
   requiresApiKey?: boolean;
   baseUrl?: string;
   /** Operator force-disabled (server precedence, TTS — #665). Never usable. */
@@ -28,6 +37,14 @@ export type ProviderCfgLike = {
  * pathological zero-model provider is classified State A at the UI boundary
  * even though the store may keep it selected with an empty model (#580).
  */
+/**
+ * Whether a config carries a complete Alibaba Cloud AccessKey pair. Both
+ * halves are required — a lone id or secret is not a credential.
+ */
+function hasAccessKeyPair(cfg: Pick<ProviderCfgLike, 'accessKeyId' | 'accessKeySecret'>): boolean {
+  return !!cfg.accessKeyId && !!cfg.accessKeySecret;
+}
+
 export function isProviderUsable(cfg: ProviderCfgLike | undefined): boolean {
   if (!cfg) return false;
   // Operator force-disable wins over any local credential path so the current
@@ -39,6 +56,9 @@ export function isProviderUsable(cfg: ProviderCfgLike | undefined): boolean {
   if (cfg.isServerConfigured) return true;
   // Keyless providers (e.g. Ollama) need an explicit user-provided baseUrl
   if (cfg.requiresApiKey === false) return !!cfg.baseUrl;
+  // AK/SK-pair providers (AliDocMind) hold no single apiKey — recognise both
+  // credential shapes, mirroring the UI's `hasCredentials` check.
+  if (hasAccessKeyPair(cfg)) return true;
   return !!cfg.apiKey;
 }
 
@@ -158,7 +178,14 @@ export function hasUsableLLMProvider(
 export function buildUsableFallbackOrder<T extends string>(
   config: Record<
     string,
-    { isServerConfigured?: boolean; apiKey?: string; serverDisabled?: boolean; enabled?: boolean }
+    {
+      isServerConfigured?: boolean;
+      apiKey?: string;
+      accessKeyId?: string;
+      accessKeySecret?: string;
+      serverDisabled?: boolean;
+      enabled?: boolean;
+    }
   >,
   opts?: { ignoreEnabledForServerConfigured?: boolean },
 ): T[] {
@@ -172,7 +199,9 @@ export function buildUsableFallbackOrder<T extends string>(
       .filter(([, c]) => c.isServerConfigured && serverUsable(c))
       .map(([id]) => id as T),
     ...Object.entries(config)
-      .filter(([, c]) => !c.isServerConfigured && clientUsable(c) && !!c.apiKey)
+      .filter(
+        ([, c]) => !c.isServerConfigured && clientUsable(c) && (!!c.apiKey || hasAccessKeyPair(c)),
+      )
       .map(([id]) => id as T),
   ];
 }

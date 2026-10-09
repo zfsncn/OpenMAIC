@@ -1,6 +1,6 @@
 /**
  * PDF parsing result types
- * Extended to support advanced features from providers like MinerU
+ * Extended to support advanced features from document-mind style providers
  */
 
 /**
@@ -13,21 +13,21 @@ export interface ParsedPdfContent {
   /** Array of images as base64 data URLs */
   images: string[];
 
-  /** Extracted tables (MinerU feature) */
+  /** Extracted tables (advanced parser feature) */
   tables?: Array<{
     page: number;
     data: string[][];
     caption?: string;
   }>;
 
-  /** Extracted formulas (MinerU feature) */
+  /** Extracted formulas (advanced parser feature) */
   formulas?: Array<{
     page: number;
     latex: string;
     position?: { x: number; y: number; width: number; height: number };
   }>;
 
-  /** Layout analysis (MinerU feature) */
+  /** Layout analysis (advanced parser feature) */
   layout?: Array<{
     page: number;
     type: 'title' | 'text' | 'image' | 'table' | 'formula';
@@ -40,9 +40,9 @@ export interface ParsedPdfContent {
     fileName?: string;
     fileSize?: number;
     pageCount: number;
-    parser?: string; // 'unpdf' | 'mineru'
+    parser?: string; // 'unpdf' | 'alidocmind'
     processingTime?: number;
-    taskId?: string; // MinerU task ID
+    taskId?: string; // Remote extractor job ID (AliDocMind)
     /** Image ID to base64 URL mapping (used in generation pipeline) */
     imageMapping?: Record<string, string>; // e.g., { "img_1": "data:image/png;base64,..." }
     /** PdfImage array with page numbers (used in generation pipeline) */

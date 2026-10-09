@@ -346,6 +346,10 @@ export class BrowserDocumentStore<
           createdAt: stage.createdAt,
           updatedAt: stage.updatedAt,
           sceneCount,
+          // Same rule as the PG backend: an empty list is reported as absent.
+          ...(stage.sourceDigests && stage.sourceDigests.length > 0
+            ? { sourceDigests: [...stage.sourceDigests] }
+            : {}),
         });
       }
       return summaries;

@@ -142,23 +142,13 @@ ComfyUI Image 不需要 API key，預設連線至 `http://localhost:8188`。在�
 課程材料的實際格式取決於所選解析器。目前支援文字、PDF、Office 文件、圖片以及部分音訊與影片格式；不同 provider 支援的格式和功能各不相同。
 
 ```bash
-# MinerU 自託管
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU 自託管的可選後端
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
 # AliDocMind（使用 Alibaba Cloud AccessKey，而不是獨立的 API key）
 ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # 選填覆寫值
 ```
 
-`unpdf` 內建於 OpenMAIC，可用於基礎 PDF 解析。Office 文件、圖片和需要 OCR、表格、公式或版面分析的材料，應選擇相容的 MinerU 或 AliDocMind provider。
+`unpdf` 內建於 OpenMAIC，可用於基礎 PDF 解析。Office 文件、圖片和需要 OCR、表格、公式或版面分析的材料，應選擇 AliDocMind provider。
 
 AliDocMind 的文件解析支援 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。目前音訊與影片材料僅支援透過 AliDocMind 解析：影片格式為 MP4、MOV、AVI、MKV、WMV，音訊格式為 MP3、WAV、AAC；不支援 M4A。
 
@@ -288,8 +278,6 @@ asr:
     apiKey: sk-...
 
 pdf:
-  mineru:
-    baseUrl: http://localhost:8888
   alidocmind:
     accessKeyId: your-access-key-id
     accessKeySecret: your-access-key-secret
@@ -311,4 +299,4 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-環境變數會逐欄位覆蓋 YAML 中的同名 provider 設定。鍵名必須使用程式碼中已註冊的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在這裡註冊為自訂 LLM provider。
+環境變數會逐欄位覆蓋 YAML 中的同名 provider 設定。鍵名必須使用程式碼中已註冊的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在這裡註冊為自訂 LLM provider。

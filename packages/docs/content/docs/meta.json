@@ -5,7 +5,6 @@
     "configuration",
     "supported-models",
     "deployment",
-    "voxcpm",
-    "vocational-task-engine"
+    "voxcpm"
   ]
 }

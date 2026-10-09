@@ -11,7 +11,28 @@
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "greetingWithName": "嗨，{{name}}"
+    "greetingWithName": "嗨，{{name}}",
+    "usageGuide": {
+      "title": "三种使用方式",
+      "openLabel": "使用说明",
+      "collapseLabel": "收起使用说明",
+      "expandLabel": "展开使用说明",
+      "steps": {
+        "noText": {
+          "title": "无教材课程",
+          "desc": "在输入框写下想学的内容，点【进入课堂】，等智能体生成教学 PPT 即可学习。"
+        },
+        "withMaterial": {
+          "title": "上传教材，新建课程",
+          "desc": "点【新建文件夹】命名课程 → 点回形针上传教材文件 → 左侧弹出课程目录，选中文件后按钮亮起，任选一项。"
+        },
+        "existing": {
+          "title": "打开已有课程",
+          "desc": "点「舆情学」等课程文件夹（如首次看不到，刷新浏览器），左侧弹出课程目录；选中章节后按钮亮起，任选一项。"
+        }
+      },
+      "apiKeyNote": "已预置 LLM API Key，异常时点右上角 ⚙ 重新配置。"
+    }
   },
   "toolbar": {
     "pdfParser": "解析器",
@@ -22,6 +43,8 @@
     "courseMaterialsSelected": "已选择 {{n}} 个材料",
     "courseMaterialMergeOrder": "材料会按下方显示顺序合并。",
     "removeCourseMaterial": "移除文件",
+    "removeCourseMaterialConfirmTitle": "移除课程材料",
+    "removeCourseMaterialConfirmMessage": "确定要移除「{{name}}」吗？移除后需要重新上传才能恢复。",
     "webSearchOn": "已开启",
     "webSearchOff": "点击开启",
     "webSearchDesc": "生成前搜索网络获取最新资料，让内容更丰富准确",
@@ -44,7 +67,23 @@
     "ttsPreview": "试听",
     "ttsPreviewing": "播放中...",
     "interactiveModeHint": "开启深度交互模式，生成更多互动内容",
-    "interactiveModeLabel": "深度交互"
+    "interactiveModeLabel": "深度交互",
+    "courseMaterialPanel": "课程材料",
+    "selectedChapterBadge": "已选第 {{n}} 章",
+    "selectChapter": "选择该章节",
+    "chapterRequirementTemplate": "开始 {{order}} {{title}} 的课程学习",
+    "chapterDirectory": "课程章节",
+    "chapterDirectoryCollapse": "收起章节",
+    "chapterDirectoryExpand": "展开章节",
+    "chapterMergeHint": "选中某一章可只针对该章生成；都不选则合并全部材料（与原来一致）。",
+    "chapterDirectoryEmpty": "这个文件夹还没有章节材料。",
+    "chapterDirectoryEmptyHint": "在这个文件夹里上传文件后，会显示在这里。",
+    "chapterFileMissing": "本设备上没有这个文件，重新选择后才能用于生成",
+    "chapterFileMissingNamed": "{{name}} 不在这台设备上，请重新选择该文件后再生成",
+    "unitQuizRequirement": "请针对《{{name}}》这一章的知识点，生成一套单元测试题。",
+    "caseTeachingRequirement": "以《{{name}}》中的知识点为例，生成一堂案例教学课。",
+    "unitQuiz": "单元测试",
+    "caseTeaching": "案例教学"
   },
   "export": {
     "pptx": "导出 PPTX",
@@ -716,7 +755,26 @@
     "aiGrading": "AI 正在批改中...",
     "aiGradingWait": "请稍候，正在分析你的答案",
     "quizReport": "答题报告",
-    "retry": "重新答题"
+    "retry": "重新答题",
+    "changeSet": "换一批",
+    "changeSetFailed": "换一批失败，请重试"
+  },
+  "case": {
+    "title": "案例教学",
+    "knowledgePoints": "本章知识点",
+    "sources": "资料来源",
+    "noSources": "未附资料来源：本案例由模型基于一般性知识撰写，并非引自经核实的报道。",
+    "discussion": "讨论题",
+    "analysis": "案例解析",
+    "analysisAction": "案例解析",
+    "analysisBusy": "正在生成解析…",
+    "analysisHint": "把案例逐条对回本章知识点",
+    "analysisFailed": "解析生成失败，请重试",
+    "hideAnalysis": "解析隐藏",
+    "changeCase": "换一个案例",
+    "changeCaseBusy": "正在检索新案例…",
+    "changeCaseFailed": "换案例失败，请重试",
+    "variantBadge": "案例 {{index}} / {{total}}"
   },
   "roundtable": {
     "teacher": "教师",
@@ -1030,9 +1088,12 @@
     "requirementPlaceholder": "输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」",
     "requirementRequired": "请输入课程需求",
     "fileTooLarge": "文件过大，请选择小于 50MB 的文件",
-    "courseMaterialCountLimit": "最多可上传 5 个课程材料文件",
-    "courseMaterialTotalSizeLimit": "课程材料总大小需小于 150MB",
-    "unsupportedCourseMaterial": "当前解析器不支持该格式，请切换解析器或选择其他文件"
+    "courseMaterialCountLimit": "最多可上传 {{n}} 个课程材料文件",
+    "courseMaterialTotalSizeLimit": "课程材料总大小需小于 {{n}}MB",
+    "unsupportedCourseMaterial": "当前解析器不支持该格式，请切换解析器或选择其他文件",
+    "someFilesSkipped": "已跳过 {{n}} 个当前解析器不支持的文件",
+    "existingClassroomOpened": "该材料已有对应课堂，正在打开",
+    "existingClassroomExtracting": "该材料已有对应课堂，正在补齐解析后打开"
   },
   "generation": {
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
@@ -1040,7 +1101,16 @@
     "analyzingCourseMaterial": "解析文档",
     "analyzingCourseMaterialDesc": "正在提取文档结构和内容...",
     "courseMaterialLoadFailed": "无法加载课程材料，请重试",
+    "courseMaterialNotArchived": "{{name}} 不在这台设备上，也没有找到已保存的解析内容。请重新上传该文件。",
     "courseMaterialParseFailed": "课程材料解析失败",
+    "courseMaterialExtractProgress": "正在解析 {{name}}（第 {{done}}/{{total}} 页）…",
+    "courseMaterialExtractProgressPercent": "正在解析 {{name}}（已完成 {{percent}}%）…",
+    "courseMaterialExtractWaiting": "正在解析 {{name}}（已提交，等待解析服务处理）…",
+    "courseMaterialExtractResuming": "正在继续之前未完成的解析（{{name}}）…",
+    "courseMaterialExtractFailedTimeout": "解析超时：解析服务长时间未返回结果。重新上传同一文件会继续该任务，而不是从头再来。",
+    "courseMaterialExtractFailedUnavailable": "解析服务暂时不可用，请稍后重试。",
+    "courseMaterialExtractFailedQuota": "解析服务的额度不足，请检查账户的解析配额。",
+    "courseMaterialExtractFailedAuth": "解析服务的凭据无效，请在设置中检查 API Key。",
     "streamNotReadable": "无法读取生成数据流",
     "generatingOutlines": "生成课程大纲",
     "generatingOutlinesDesc": "正在构建学习路径...",
@@ -1086,6 +1156,7 @@
     "sceneTypeQuiz": "测验",
     "sceneTypeInteractive": "互动",
     "sceneTypePbl": "项目式学习",
+    "sceneTypeCase": "案例教学",
     "sceneDescriptionPlaceholder": "简短描述这个场景的目的和内容",
     "quizQuestionCount": "题目数量",
     "quizDifficulty": "难度",
@@ -1143,7 +1214,9 @@
     "webSearchFailed": "网络搜索失败",
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
     "jumpToBlankTitle": "跳到待补充标题的章节",
-    "analyzingMediaMaterial": "解析音视频内容"
+    "analyzingMediaMaterial": "解析音视频内容",
+    "caseResearching": "正在检索案例素材",
+    "caseResearchingDesc": "按本章知识点检索真实事件报道"
   },
   "settings": {
     "title": "设置",
@@ -1408,7 +1481,6 @@
     "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
-    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS（本地）",
     "providerBrowserNativeTTS": "浏览器原生 TTS",
     "voxcpmBackend": "Backend",
@@ -1461,7 +1533,6 @@
     "qwenCloneSaveFailed": "Qwen 克隆音色注册失败",
     "qwenCloneUnsupported": "当前浏览器不支持录音，请改为上传音频文件。",
     "qwenCloneSpeedHint": "克隆音色始终以 1× 语速合成。",
-    "ttsSpeedUnsupported": "此提供方不支持调节语速。",
     "qwenCloneDeleteWarning": "音色已从本地移除，但服务商端删除失败。",
     "qwenCloneNarrationUnavailable": "指定音色不可用，旁白将改用其他可用音色。",
     "qwenCloneDiscussionUnavailable": "指定音色不可用，讨论将改用其他可用音色。",
@@ -1472,8 +1543,6 @@
     "providerLemonadeASR": "Lemonade ASR（本地）",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（内置）",
-    "providerMinerU": "MinerU",
-    "providerMinerUCloud": "MinerU（云端）",
     "browserNativeTTSNote": "浏览器原生 TTS 无需配置，完全免费，使用系统内置语音",
     "testTTS": "测试 TTS",
     "testASR": "测试 ASR",
@@ -1690,22 +1759,12 @@
     "pdfSettings": "PDF 解析",
     "documentParsingSettings": "文档解析",
     "supportedFormats": "支持的格式",
-    "mineruSelfHostFormatsNote": "解析 PDF 和图片需要 MinerU 服务器安装 mineru[pipeline] 或 mineru[core] 依赖。轻量版 mineru-api 可能仅支持 Office 文档。",
     "pdfParsingSettings": "PDF 解析设置",
     "pdfDescription": "选择 PDF 解析引擎，支持文本提取、图片处理和表格识别",
     "pdfProvider": "PDF 解析器",
     "pdfFeatures": "支持功能",
     "pdfApiKey": "API Key",
     "pdfBaseUrl": "Base URL",
-    "mineruDescription": "MinerU 是一个商用 PDF 解析服务，支持高级功能如表格提取、公式识别和布局分析。",
-    "mineruApiKeyRequired": "使用前需要在 MinerU 官网申请 API Key。",
-    "mineruWarning": "注意",
-    "mineruCostWarning": "MinerU 为商用服务，使用可能产生费用。请查看 MinerU 官网了解定价详情。",
-    "enterMinerUApiKey": "输入 MinerU API Key",
-    "mineruLocalDescription": "MinerU 支持本地部署，提供高级 PDF 解析功能（表格、公式、布局分析）。需要先部署 MinerU 服务。",
-    "mineruServerAddress": "本地 MinerU 服务器地址（如：http://localhost:8080）",
-    "mineruApiKeyOptional": "仅在服务器启用认证时需要",
-    "mineruCloudApiKeyPlaceholder": "输入 MinerU Cloud API Key",
     "optionalApiKey": "可选的 API Key",
     "featureText": "文本提取",
     "featureImages": "图片提取",

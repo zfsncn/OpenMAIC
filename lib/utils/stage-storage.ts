@@ -37,6 +37,7 @@ import {
   withRuntimeStorageSharedLock,
 } from './chat-storage-lock';
 import { DocumentVersionError, type DocumentSummary } from '@openmaic/storage';
+import type { LessonKind } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import {
   MISSING_ASSET_LEASE,
@@ -72,7 +73,8 @@ const log = createLogger('StageStorage');
 /**
  * Dispatched on `window` when something other than the library page changed
  * the owner's courses or folders in the background (the one-way importer of
- * pre-server browser data does), so an open library can list them again.
+ * pre-server browser data does, or the access-code gate just admitted the
+ * browser), so an open library can list them again.
  */
 export const LIBRARY_CHANGED_EVENT = 'openmaic:library-changed';
 
@@ -110,6 +112,24 @@ export interface StageListItem {
   taskEngineMode?: boolean;
   /** Folder this course belongs to; undefined = unfiled. Device-local only. */
   folderId?: string;
+  /**
+   * Digests of the materials this course was generated from, when it names any.
+   * Carried on the list row so the home page can tell that a material already
+   * has a course — and must therefore not produce a second one — without
+   * loading a single document. Absent for courses generated before the field
+   * existed, which reads as "unknown", never as "generated from nothing".
+   */
+  sourceDigests?: string[];
+  /**
+   * Which kind of lesson this row is — see `LessonKind`. Absent means an
+   * ordinary teaching lesson, which is also how every course generated before
+   * the field existed reads.
+   *
+   * The home page needs it because a quiz classroom and the teaching classroom
+   * made from the *same* material share every digest: without this field, a
+   * re-upload could not tell which of the two it should reopen.
+   */
+  lessonKind?: LessonKind;
 }
 
 function stampStage(stageId: string, stage: Stage, now: number): Stage {
@@ -741,6 +761,8 @@ export async function listStages(): Promise<StageListItem[]> {
           ...(item.description !== undefined ? { description: item.description } : {}),
           ...(item.interactiveMode !== undefined ? { interactiveMode: item.interactiveMode } : {}),
           ...(item.taskEngineMode !== undefined ? { taskEngineMode: item.taskEngineMode } : {}),
+          ...(item.sourceDigests !== undefined ? { sourceDigests: item.sourceDigests } : {}),
+          ...(item.lessonKind !== undefined ? { lessonKind: item.lessonKind } : {}),
         };
         return item.folderId ? { ...base, folderId: item.folderId } : base;
       })

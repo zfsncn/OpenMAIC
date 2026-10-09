@@ -53,6 +53,7 @@ import {
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import { resetHomeComposer } from '@/lib/home/composer-reset';
 
 const log = createLogger('Classroom');
 
@@ -454,6 +455,7 @@ export function ClassroomSurface({
                 <p className="text-sm text-muted-foreground">{t('classroom.notFoundDesc')}</p>
                 <Link
                   href="/"
+                  onClick={() => resetHomeComposer()}
                   className="mt-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
                 >
                   {t('classroom.backToHome')}

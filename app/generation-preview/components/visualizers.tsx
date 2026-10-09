@@ -24,11 +24,13 @@ export function StepVisualizer({
   stepId,
   outlines,
   webSearchSources,
+  caseResearchSources,
   onExpandOutline,
 }: {
   stepId: string;
   outlines?: SceneOutline[] | null;
   webSearchSources?: Array<{ title: string; url: string }>;
+  caseResearchSources?: Array<{ title: string; url: string }>;
   onExpandOutline?: () => void;
 }) {
   switch (stepId) {
@@ -36,6 +38,11 @@ export function StepVisualizer({
       return <PdfScanVisualizer />;
     case 'web-search':
       return <WebSearchVisualizer sources={webSearchSources || []} />;
+    // The research looks the same while it runs — pages arriving for a
+    // question — so it reuses the same visual rather than inventing a second
+    // one that would say nothing new. Only the sources differ.
+    case 'case-search':
+      return <WebSearchVisualizer sources={caseResearchSources || []} />;
     case 'outline':
       return <StreamingOutlineVisualizer outlines={outlines || []} onExpand={onExpandOutline} />;
     case 'agent-generation':

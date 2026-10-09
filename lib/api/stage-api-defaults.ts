@@ -14,6 +14,7 @@ import type {
   QuizContent,
   InteractiveContent,
   PBLContent,
+  CaseContent,
 } from '@/lib/types/stage';
 
 // ==================== Utility Functions ====================
@@ -99,6 +100,24 @@ export function createDefaultPBLContent(): PBLContent {
 }
 
 /**
+ * Create default CaseContent.
+ *
+ * An empty case, not a placeholder case: `knowledgePoints` is empty and the
+ * narrative is blank, so a scene inserted from the editor and left unwritten
+ * reads as "nothing here yet" rather than as a case about nothing. There is no
+ * `analysis` — it is written on demand, never seeded.
+ */
+export function createDefaultCaseContent(): CaseContent {
+  return {
+    type: 'case',
+    caseTitle: '',
+    knowledgePoints: [],
+    narrative: '',
+    discussionQuestions: [],
+  };
+}
+
+/**
  * Create default Content based on type
  */
 export function createDefaultContent(type: SceneType): SceneContent {
@@ -111,6 +130,8 @@ export function createDefaultContent(type: SceneType): SceneContent {
       return createDefaultInteractiveContent();
     case 'pbl':
       return createDefaultPBLContent();
+    case 'case':
+      return createDefaultCaseContent();
     default:
       throw new Error(`Unknown scene type: ${type}`);
   }

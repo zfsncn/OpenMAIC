@@ -11,12 +11,18 @@
  *
  * 键的合法性由 tests/config/station-stage-keys.test.ts 对照 LLM_STAGES
  * 静态校验，防止两端漂移。
+ *
+ * `scene-content` 站点同时管 `case-analysis`（案例解析）：它是同一个场景的
+ * 第二遍生成，用户在这里选模型时预期案例正文与案例解析同源。注意
+ * `scene-content:case` 这类复合子键**不**需要单列——getUserStageRoute 的冒号
+ * 父级回溯已经从 `scene-content` 继承；而 `case-analysis` 不含冒号，回溯不到
+ * 任何父键，**必须显式列出**，否则会被本文件的孤儿检测抓住。
  */
 export const STATION_STAGE_KEYS: Record<string, readonly string[]> = {
   'web-research': ['web-search-query-rewrite'],
   outline: ['scene-outlines-stream'],
   agents: ['agent-profiles'],
-  'scene-content': ['scene-content'],
+  'scene-content': ['scene-content', 'case-analysis'],
   'scene-actions': ['scene-actions'],
   interaction: ['chat-adapter', 'quiz-grade', 'pbl-chat', 'pbl-v2-runtime'],
 };

@@ -31,7 +31,6 @@ const TTS_PROVIDER_NAME_KEYS: Record<string, string> = {
   'doubao-tts': 'settings.providerDoubaoTTS',
   'elevenlabs-tts': 'settings.providerElevenLabsTTS',
   'minimax-tts': 'settings.providerMiniMaxTTS',
-  'google-tts': 'settings.providerGoogleTTS',
   'lemonade-tts': 'settings.providerLemonadeTTS',
   'browser-native-tts': 'settings.providerBrowserNativeTTS',
 };

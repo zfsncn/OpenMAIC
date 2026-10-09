@@ -40,8 +40,6 @@ const ENV_PREFIXES_TO_CLEAR = [
   'ASR_QWEN',
   'ASR_FUNASR',
   'PDF_UNPDF',
-  'PDF_MINERU',
-  'PDF_MINERU_CLOUD',
   'IMAGE_OPENAI',
   'IMAGE_SEEDREAM',
   'IMAGE_QWEN_IMAGE',
@@ -481,67 +479,45 @@ providers:
     });
   });
 
-  describe('baseUrl-only providers (e.g. mineru)', () => {
+  // PDF env/YAML providers are loaded with `requiresBaseUrl: true`, so an
+  // entry activates on a base URL alone (no apiKey) and is skipped when only
+  // an apiKey is present. AliDocMind is the exception — its AK/SK handling is
+  // covered by the `resolveManagedAliDocMindCredentials (AK/SK)` block below.
+  describe('baseUrl-required PDF providers', () => {
     it('includes PDF provider from YAML when only baseUrl is configured (no apiKey)', async () => {
       yamlOverride = `
 pdf:
-  mineru:
+  unpdf:
     baseUrl: http://localhost:8888
 `;
       const { getServerPDFProviders, resolvePDFBaseUrl } =
         await import('@/lib/server/provider-config');
       const providers = getServerPDFProviders();
 
-      expect(providers.mineru).toBeDefined();
-      expect(resolvePDFBaseUrl('mineru')).toBe('http://localhost:8888');
+      expect(providers.unpdf).toBeDefined();
+      expect(resolvePDFBaseUrl('unpdf')).toBe('http://localhost:8888');
     });
 
     it('includes provider from env when only BASE_URL is set (no API_KEY)', async () => {
-      vi.stubEnv('PDF_MINERU_BASE_URL', 'http://localhost:8888');
+      vi.stubEnv('PDF_UNPDF_BASE_URL', 'http://localhost:8888');
       const { getServerPDFProviders, resolvePDFBaseUrl } =
         await import('@/lib/server/provider-config');
       const providers = getServerPDFProviders();
 
-      expect(providers.mineru).toBeDefined();
-      expect(resolvePDFBaseUrl('mineru')).toBe('http://localhost:8888');
+      expect(providers.unpdf).toBeDefined();
+      expect(resolvePDFBaseUrl('unpdf')).toBe('http://localhost:8888');
     });
 
     it('excludes PDF provider when only apiKey is configured (no baseUrl)', async () => {
       yamlOverride = `
 pdf:
-  mineru:
+  unpdf:
     apiKey: sk-fake
 `;
       const { getServerPDFProviders } = await import('@/lib/server/provider-config');
       const providers = getServerPDFProviders();
 
-      expect(providers.mineru).toBeUndefined();
-    });
-
-    it('includes MinerU Cloud from env when only API key is configured', async () => {
-      vi.stubEnv('PDF_MINERU_CLOUD_API_KEY', 'mineru-cloud-key');
-      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
-        await import('@/lib/server/provider-config');
-      const providers = getServerPDFProviders();
-
-      expect(providers['mineru-cloud']).toBeDefined();
-      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-key');
-      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
-    });
-
-    it('includes MinerU Cloud from YAML when only API key is configured', async () => {
-      yamlOverride = `
-pdf:
-  mineru-cloud:
-    apiKey: mineru-cloud-yaml-key
-`;
-      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
-        await import('@/lib/server/provider-config');
-      const providers = getServerPDFProviders();
-
-      expect(providers['mineru-cloud']).toBeDefined();
-      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-yaml-key');
-      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
+      expect(providers.unpdf).toBeUndefined();
     });
   });
 

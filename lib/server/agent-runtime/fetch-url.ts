@@ -272,8 +272,8 @@ export function extractHtmlToMarkdown(
  * PDF extraction candidates, mirroring the reference's
  * `documentProviderCandidates('application/pdf')` but over the TARGET's own
  * lib/document extract registry: server-configured managed providers first
- * (mineru → mineru-cloud → alidocmind), then the unconditional local `unpdf`
- * fallback. Product-specific gateways and accounting wrappers are omitted;
+ * (alidocmind), then the unconditional local `unpdf` fallback.
+ * Product-specific gateways and accounting wrappers are omitted;
  * `provider.extract` is called directly.
  */
 function pdfExtractionCandidates(): Array<{
@@ -282,8 +282,6 @@ function pdfExtractionCandidates(): Array<{
 }> {
   const configured = getServerPDFProviders();
   const ids: string[] = [];
-  if (configured.mineru) ids.push('mineru');
-  if (configured['mineru-cloud']) ids.push('mineru-cloud');
   if (configured.alidocmind) ids.push('alidocmind');
   ids.push('unpdf');
   return ids

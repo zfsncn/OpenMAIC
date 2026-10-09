@@ -94,7 +94,6 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
-  TTS_GOOGLE: 'google-tts',
   TTS_LEMONADE: 'lemonade-tts',
 };
 
@@ -108,8 +107,6 @@ const ASR_ENV_MAP: Record<string, string> = {
 
 const PDF_ENV_MAP: Record<string, string> = {
   PDF_UNPDF: 'unpdf',
-  PDF_MINERU: 'mineru',
-  PDF_MINERU_CLOUD: 'mineru-cloud',
 };
 
 const IMAGE_ENV_MAP: Record<string, string> = {
@@ -523,10 +520,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
       keylessProviders: new Set(['funasr-asr', 'lemonade-asr']),
     }),
     pdf: applyAliDocMindFallback(
-      loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
-        requiresBaseUrl: true,
-        baseUrlOptionalProviders: new Set(['mineru-cloud']),
-      }),
+      loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
       yamlData.pdf,
     ),
     image,

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
+  ArrowLeft,
   ArrowUp,
   Check,
   ChevronDown,
@@ -37,20 +38,36 @@ import { Textarea as UITextarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
+import { ChapterDirectory } from '@/components/generation/chapter-directory';
+import { HomeUsageGuide, HomeUsageGuideEntry } from '@/components/classroom/home-usage-guide';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
+import { isCourseMaterialUsable } from '@/lib/document/course-material-availability';
+import { computeContentDigest } from '@/lib/document/content-digest';
+import { hasUsableArchivedExtraction } from '@/lib/document/extraction-archive-client';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
+  courseMaterialsInView,
   dedupeCourseMaterialFiles,
 } from '@/lib/document/course-materials';
+import {
+  readHomeMaterialsResult,
+  restoreCourseMaterials,
+  writeHomeMaterials,
+} from '@/lib/document/course-material-persistence';
 import type {
   SelectedCourseMaterial,
   SessionDocumentSource,
   UserRequirements,
 } from '@/lib/types/generation';
+// Type-only: the extract-only session written below has to match what the
+// preview page reads back out of `sessionStorage`, so it is typed by the shape
+// that page declares rather than by a second copy of it here. `import type` is
+// erased, so the preview page's UI imports do not follow it into this bundle.
+import type { GenerationSessionState } from './generation-preview/types';
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
@@ -72,6 +89,8 @@ import {
 } from '@/lib/utils/stage-storage';
 import type { FolderRecord } from '@/lib/types/folder';
 import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
+import { resolveChapterTitle } from '@/lib/utils/chapter-naming';
+import { isCourseware } from '@/lib/utils/courseware';
 import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
@@ -81,6 +100,12 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
+import {
+  COMPOSER_DRAFT_KEY,
+  HOME_COMPOSER_RESET_EVENT,
+  consumePendingHomeComposerReset,
+  resetHomeComposer,
+} from '@/lib/home/composer-reset';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import {
@@ -111,7 +136,21 @@ const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
 let workbenchRuntimeCache: boolean | null = null;
 
 interface FormState {
+  /**
+   * Every attached material, across every folder — one list, not one per
+   * folder. Each row carries the `folderId` it is filed under, and the folder
+   * on screen is applied as a filter over this (`visibleMaterials`); only the
+   * restore, the write-back and the row-level mutators touch it whole.
+   */
   courseMaterials: SelectedCourseMaterial[];
+  /**
+   * Chapter selection: the id of the single material a lesson should be built
+   * from, or null to merge every material (the pre-existing behaviour). It is a
+   * refinement, never a validation gate — a dangling id is tolerated and
+   * resolved to null at read time (see `effectiveSelectedMaterialId`), and the
+   * view narrows that further (see `visibleSelectedMaterialId`).
+   */
+  selectedMaterialId: string | null;
   requirement: string;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
@@ -119,6 +158,7 @@ interface FormState {
 
 const initialFormState: FormState = {
   courseMaterials: [],
+  selectedMaterialId: null,
   requirement: '',
   interactiveMode: false,
   vocationalTestMode: false,
@@ -168,8 +208,11 @@ function HomePage() {
   >(undefined);
 
   // Draft cache for requirement text
-  const { cachedValue: cachedRequirement, updateCache: updateRequirementCache } =
-    useDraftCache<string>({ key: 'requirementDraft' });
+  const {
+    cachedValue: cachedRequirement,
+    updateCache: updateRequirementCache,
+    clearCache: clearRequirementCache,
+  } = useDraftCache<string>({ key: COMPOSER_DRAFT_KEY });
 
   // A usable LLM provider exists ⇒ a concrete model is always selected (#580
   // invariant). Gate generation on this single condition (state A vs B)
@@ -224,6 +267,17 @@ function HomePage() {
   // toolbar's add/remove affordances, so the session is always built from a
   // set that cannot change under it.
   const [preparingGenerate, setPreparingGenerate] = useState(false);
+  // True once the directory restore has settled (see the effect below), whether
+  // it found a stored list or not. Until then the chapter set on screen is not
+  // yet the user's chapter set, and generating from it would build a session
+  // that silently omits every restored chapter.
+  const [directoryRestored, setDirectoryRestored] = useState(false);
+  // Stricter than `directoryRestored`, which settles on failure too: this is
+  // true only once the store has actually *replied* about the directory. It
+  // gates the write-back below, because a list that has not been read is not
+  // the user's list — and writing one back while it is empty erases the stored
+  // directory rather than saving anything (see `course-material-persistence`).
+  const [directoryLoaded, setDirectoryLoaded] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -282,7 +336,12 @@ function HomePage() {
       }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
-      toast.error('Persistence is unavailable. Saved classrooms could not be loaded.');
+      // A 401 means the access-code gate has not admitted this browser yet —
+      // the gate modal owns that message, and a "persistence is unavailable"
+      // toast next to it reads as a broken library rather than a locked one.
+      if (!String(err).includes('HTTP 401')) {
+        toast.error('Persistence is unavailable. Saved classrooms could not be loaded.');
+      }
     }
   };
 
@@ -416,9 +475,36 @@ function HomePage() {
       }
     };
 
+  /**
+   * Drop a folder's materials along with the folder.
+   *
+   * Only `'remove'` needs this. `'ungroup'` deliberately leaves the rows alone:
+   * the courses that were filed in the folder become unfiled, and the chapter
+   * lists that describe them have to come back to the root with them — which
+   * they do by themselves, because a `folderId` no folder answers to is an
+   * unfiled row as far as the view is concerned (see `courseMaterialsInView`).
+   */
+  const dropMaterialsOfFolder = (folderId: string) => {
+    const dropped = form.courseMaterials.filter((item) => item.folderId === folderId);
+    if (dropped.length === 0) return;
+    // The bytes belong to the directory: drop them with the rows, exactly as
+    // removing a single chapter does, so deleting a folder really frees them.
+    for (const item of dropped) {
+      if (!item.storageKey) continue;
+      void deleteDocumentBlob(item.storageKey).catch((err) => {
+        log.warn('Could not drop the removed material bytes:', err);
+      });
+    }
+    setForm((prev) => ({
+      ...prev,
+      courseMaterials: prev.courseMaterials.filter((item) => item.folderId !== folderId),
+    }));
+  };
+
   const confirmDeleteFolder = async (folder: FolderRecord, mode: DeleteFolderMode) => {
     try {
       await deleteFolder(folder.id, mode);
+      if (mode === 'remove') dropMaterialsOfFolder(folder.id);
       if (currentFolderId === folder.id) setCurrentFolderId(undefined);
     } catch (err) {
       log.error('Failed to delete folder:', err);
@@ -464,39 +550,58 @@ function HomePage() {
     });
   }, [classrooms, deferredSearchQuery]);
 
+  // The courseware a NON-search list renders from: the teaching lessons only.
+  // "单元测试" / "案例教学" are generated from the same material as the lesson and
+  // are kept off the home grid and the folder tiles — but they stay in
+  // `classrooms`, which is also the reuse predicate's search set (see
+  // `runGeneration`). Filtering THAT list would make every click generate a new
+  // course instead of reopening the existing one, so the projection lives here
+  // and only here. Searching is exempt on purpose — see `visibleClassrooms`.
+  const coursewareClassrooms = useMemo(() => classrooms.filter(isCourseware), [classrooms]);
+
   // Folder-aware view model. Searching collapses the hierarchy: every matching
   // course is shown flat, annotated with its folder name. Otherwise the root
   // view shows folder tiles + unfiled courses, and a folder view shows only
   // that folder's members.
   const folderNameById = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
+  // The folder ids that still exist. An id missing from here is a folder that
+  // was deleted, which is how both views below tell "filed under a folder that
+  // is gone" (show it at the root) from "filed under a folder with nothing in
+  // it" (show nothing).
+  const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
   const isSearching = deferredSearchQuery.trim().length > 0;
   // The course tiles rendered in the active view: search flattens everything;
   // a folder shows only its members; the root shows unfiled courses (folder
   // tiles are rendered separately above them).
   const visibleClassrooms = useMemo(() => {
+    // Searching stays over the WHOLE list: the assessments are hidden from the
+    // two browsing views, and the search results are the only remaining door to
+    // rename, move or delete one.
     if (isSearching) return filteredClassrooms;
-    if (currentFolderId) return filteredClassrooms.filter((c) => c.folderId === currentFolderId);
-    return filteredClassrooms.filter(
-      (c) => c.folderId === undefined || !folderNameById.has(c.folderId),
-    );
-  }, [filteredClassrooms, isSearching, currentFolderId, folderNameById]);
+    if (currentFolderId) return coursewareClassrooms.filter((c) => c.folderId === currentFolderId);
+    return coursewareClassrooms.filter((c) => c.folderId === undefined || !folderIds.has(c.folderId));
+  }, [filteredClassrooms, coursewareClassrooms, isSearching, currentFolderId, folderIds]);
+  // Pairs with the `classroom.emptyFolderHint` branch below: a folder holding
+  // nothing but assessments must read as EMPTY, not as a folder with an
+  // invisible member (which would render neither the grid nor the hint — a
+  // blank panel).
   const currentFolderClassrooms = useMemo(
-    () => (currentFolderId ? classrooms.filter((c) => c.folderId === currentFolderId) : []),
-    [classrooms, currentFolderId],
+    () => (currentFolderId ? coursewareClassrooms.filter((c) => c.folderId === currentFolderId) : []),
+    [coursewareClassrooms, currentFolderId],
   );
   const courseCountByFolder = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const c of classrooms) {
+    for (const c of coursewareClassrooms) {
       if (c.folderId) counts.set(c.folderId, (counts.get(c.folderId) ?? 0) + 1);
     }
     return counts;
-  }, [classrooms]);
+  }, [coursewareClassrooms]);
   // Up to 3 member course covers (first-slide thumbnails) per folder, for the
   // folder tile's cover stack. Members are ordered by updatedAt desc so the
   // frontmost cover is the most recently touched course.
   const coverSlidesByFolder = useMemo(() => {
     const byFolder = new Map<string, Slide[]>();
-    for (const c of [...classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
+    for (const c of [...coursewareClassrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
       if (!c.folderId) continue;
       const slide = thumbnails[c.id];
       if (!slide) continue;
@@ -505,8 +610,210 @@ function HomePage() {
       byFolder.set(c.folderId, list);
     }
     return byFolder;
-  }, [classrooms, thumbnails]);
+  }, [coursewareClassrooms, thumbnails]);
   const currentFolder = folders.find((f) => f.id === currentFolderId);
+
+  // Chapter selection is resolved at read time, never trusted as stored state.
+  // A selection can go stale through paths that never touch it — the user
+  // deleting that row, or the toolbar's extractor-switch cleanup dropping the
+  // material in bulk — so deriving "selected and still present" here immunises
+  // every removal path at once instead of patching each one. A stale selection
+  // degrades to null, which is the merge-everything path, not an empty one.
+  //
+  // It resolves against the **whole** list, not the folder on screen: the
+  // selection is one stored slot, and writing the view-resolved value back
+  // would erase the user's choice the moment they glanced at another folder.
+  // What the view should show is `visibleSelectedMaterialId` below.
+  const effectiveSelectedMaterialId =
+    form.selectedMaterialId &&
+    form.courseMaterials.some((material) => material.id === form.selectedMaterialId)
+      ? form.selectedMaterialId
+      : null;
+
+  // ─── The folder view over the material directory ──────────────
+  // Folders group generated courses, and the chapter directory follows them:
+  // opening a folder shows the chapters filed under it. The directory itself
+  // stays one list — see `courseMaterialsInView` — so opening a folder only
+  // changes what is *rendered*, never what is read, written or restored.
+  //
+  // The ordinals are re-derived here, from the position in the list being
+  // shown, rather than trusted from the stored rows. Two cases need it and
+  // neither can be fixed where the rows were written: a folder deleted on
+  // another device leaves this one with rows filed under an id no folder
+  // answers to, which surface at the root, and the root's own numbering has to
+  // absorb them; and a stored list edited by an older build of the app carries
+  // whatever numbering that build used. Deriving "which chapter is this" from
+  // the view is the same move as `effectiveSelectedMaterialId` below, and it
+  // makes every consumer — the panel's numbers, the selected-chapter badge, the
+  // upload limits — agree by construction.
+  const visibleMaterials = useMemo(() => {
+    const rows = courseMaterialsInView(form.courseMaterials, {
+      folderId: currentFolderId,
+      knownFolderIds: folderIds,
+    }).sort((a, b) => a.order - b.order);
+    return rows.map((material, index) =>
+      material.order === index + 1 ? material : { ...material, order: index + 1 },
+    );
+  }, [form.courseMaterials, currentFolderId, folderIds]);
+
+  // The selection as *this view* resolves it: a chapter selected in another
+  // folder is not a selection here. Without this the single stored slot would
+  // leak across folders and a generate issued while browsing an empty folder
+  // would quietly ingest the chapter selected in the previous one.
+  const visibleSelectedMaterialId =
+    effectiveSelectedMaterialId &&
+    visibleMaterials.some((material) => material.id === effectiveSelectedMaterialId)
+      ? effectiveSelectedMaterialId
+      : null;
+
+  // A "back to home" reset issued from another route has to beat the restore
+  // below. The reset clears the stored selection with a fire-and-forget write,
+  // so a restore that reads the row a moment too early would bring the old
+  // selection back — the reset would look like it worked only when the server
+  // was slow. The flag is set synchronously at click time, so it answers "should
+  // a selection come back" without waiting for that write, and it is consumed
+  // here because this mount is the one it was meant for.
+  const pendingComposerResetRef = useRef(false);
+  useEffect(() => {
+    pendingComposerResetRef.current = consumePendingHomeComposerReset();
+  }, []);
+
+  // ─── Chapter directory persistence ────────────────────────────
+  // The directory is restored from the synced KV list on mount and written
+  // back whenever it changes. Both halves are best-effort and silent: on a
+  // deployment without server persistence every call here is a no-op, and the
+  // page behaves exactly as it did before, with the list living in this tab.
+
+  // The restore runs once. It is asynchronous, so a user who starts attaching
+  // files before it lands keeps their work: the restore never replaces a
+  // directory that already has chapters in it.
+  //
+  // `directoryRestored` is set when it settles — found, not found, or failed —
+  // and gates generation, because the list this page renders is not the user's
+  // list until the read has answered. A chapter restored from another device
+  // has exactly the same bytes-missing shape as no chapter at all, so a
+  // generate that raced past the restore would produce a lesson with the
+  // materials quietly absent, which is the failure this whole directory exists
+  // to prevent. A deployment without persistence resolves this immediately.
+  useEffect(() => {
+    let cancelled = false;
+    // Set once a stored list has answered. A retry is only owed while the read
+    // has never had an answer: otherwise a broadcast from the importer would
+    // re-read — and could resurrect — a directory the user has since cleared.
+    let readAnswered = false;
+    const restoreDirectory = async () => {
+      try {
+        const result = await readHomeMaterialsResult();
+        readAnswered = result.answered;
+        const stored = result.stored;
+        if (!stored) return;
+        if (cancelled) return;
+        const restored = await restoreCourseMaterials(stored);
+        if (cancelled) return;
+        setForm((prev) =>
+          prev.courseMaterials.length > 0
+            ? prev
+            : {
+                ...prev,
+                courseMaterials: restored,
+                selectedMaterialId: pendingComposerResetRef.current
+                  ? null
+                  : stored.selectedMaterialId,
+              },
+        );
+      } finally {
+        if (!cancelled) {
+          // Deliberately here rather than the moment the read answers, and the
+          // difference is not cosmetic. Restoring the bytes takes an await, so
+          // flagging earlier would leave a render — one that can last as long
+          // as IndexedDB takes — in which "the directory has been read" is true
+          // while the list it produced is not in state yet. The write-back
+          // effect runs on exactly that render, sees an empty list it is now
+          // allowed to erase, and deletes the stored directory only to write it
+          // straight back: a needless destroy-and-recreate with a real window
+          // in the middle. Set with the chapters already in state, the flag can
+          // only ever go true over a list that reflects what was read.
+          if (readAnswered) setDirectoryLoaded(true);
+          setDirectoryRestored(true);
+        }
+      }
+    };
+    void restoreDirectory();
+
+    // This read meets the same 401 as the course list above, and for the same
+    // reason: it runs on mount, before the access cookie exists, and never
+    // asks again — so a folder opened right after entering the code reported
+    // "no chapters yet" until a reload. Re-running it when the gate admits
+    // the browser (or when anything else announces the library changed) is
+    // what makes an unlocked folder list its chapters in place.
+    const onLibraryChanged = () => {
+      if (readAnswered) return;
+      void restoreDirectory();
+    };
+    window.addEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
+    };
+  }, []);
+
+  // Write the directory back after every change. No debounce: the writes are
+  // serialized in `writeHomeMaterials`, so issuing one per change is both
+  // correct and cheap (a batch attach produces two: the rows, then their
+  // storage keys), and there is no timer window in which a change could be
+  // lost to a reload.
+  //
+  // Two gates stand between a change and that write, and both are about the
+  // same thing: the list in memory is only the user's list once the stored one
+  // has been read.
+  //
+  // The mount render is skipped — the restore above has not resolved yet, so
+  // the list is still empty and writing it would erase the stored directory.
+  // `directoryWriteArmedRef` covers exactly that first render and no more; a
+  // later change still has to clear the second gate.
+  //
+  // That second gate is the read itself (`directoryLoaded`). Until the store
+  // has replied, a change here is a change to a list that was never loaded, and
+  // a write-back replaces the whole record — so an in-memory list that is empty
+  // because the read has not landed would delete the user's directory instead
+  // of saving it. `allowEmpty` carries the same claim to the store, which
+  // refuses an empty list unless it is told the read happened; that refusal is
+  // what keeps this safe even if a future caller forgets the gate.
+  //
+  // A page whose read never answers therefore stops writing, which is the
+  // intended trade: on a deployment that cannot be read from, a write would
+  // fail anyway, whereas a write that erases is not recoverable.
+  const directoryWriteArmedRef = useRef(false);
+  // Whether this page has ever held a chapter in memory. Erasing is only ever
+  // earnt: a list that is empty *and always has been* describes a page with
+  // nothing of its own to save, and the delete it would issue can only destroy
+  // something this page never saw — a directory another device stored between
+  // the read and this write. Skipping it costs nothing, because a delete of an
+  // already-empty record has no effect anyway. Declared before the write effect
+  // so it is updated first within a commit.
+  const heldMaterialsRef = useRef(false);
+  useEffect(() => {
+    if (form.courseMaterials.length > 0) heldMaterialsRef.current = true;
+  }, [form.courseMaterials]);
+  useEffect(() => {
+    if (!directoryWriteArmedRef.current) {
+      directoryWriteArmedRef.current = true;
+      return;
+    }
+    if (!directoryLoaded) return;
+    void writeHomeMaterials(
+      {
+        materials: form.courseMaterials,
+        selectedMaterialId: effectiveSelectedMaterialId,
+      },
+      // Both halves of the claim that this empty list is the user's doing: the
+      // stored directory was read, and this page held chapters of its own to
+      // empty. An empty list that fails either test is a page still starting
+      // up, and the store is told to keep its row.
+      { allowEmpty: heldMaterialsRef.current },
+    );
+  }, [form.courseMaterials, effectiveSelectedMaterialId, directoryLoaded]);
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -519,13 +826,80 @@ function HomePage() {
     }
   };
 
+  /**
+   * Put a newly attached file's bytes in this device's IndexedDB and record
+   * the key on the row — and compute the row's content digest while the bytes
+   * are being read anyway.
+   *
+   * Deliberately not awaited by the caller: the chapter appears instantly and
+   * its key lands a moment later, so attaching a dozen files stays one
+   * gesture. The key is what lets the chapter directory be rebuilt after a
+   * reload — without it a restored row would have no way back to its bytes —
+   * and a file whose key never arrives degrades to the same visible-but-needs-
+   * reselecting state as a row restored on another device.
+   *
+   * The digest is the other half of that durability: it is what names the
+   * extraction the server has already done for these bytes, so a chapter can
+   * be resolved back to its archived markdown from a device that no longer
+   * holds the file. Both halves are independent — a row may get one, the
+   * other, both, or (on a storage failure) neither.
+   */
+  const captureMaterialStorageKeys = async (additions: readonly { id: string; file?: File }[]) => {
+    const captured = await Promise.all(
+      additions.map(async ({ id, file }) => {
+        if (!file) return null;
+        const [storageKey, contentDigest] = await Promise.all([
+          storeDocumentBlob(file).catch((err: unknown) => {
+            log.warn('Could not cache the material bytes for the chapter directory:', err);
+            return undefined;
+          }),
+          computeContentDigest(file),
+        ]);
+        return { id, storageKey, contentDigest };
+      }),
+    );
+    const capturedById = new Map<
+      string,
+      { storageKey: string | undefined; contentDigest: string | undefined }
+    >();
+    for (const entry of captured) {
+      if (entry) capturedById.set(entry.id, entry);
+    }
+    if (capturedById.size === 0) return;
+    // One update for the whole batch rather than one per file: every update is
+    // a write to the synced row, and a dozen of them for a single attach is a
+    // dozen chances to land out of order.
+    setForm((prev) => {
+      let changed = false;
+      const courseMaterials = prev.courseMaterials.map((item) => {
+        const got = capturedById.get(item.id);
+        if (!got) return item;
+        const storageKey = item.storageKey ?? got.storageKey;
+        const contentDigest = item.contentDigest ?? got.contentDigest;
+        if (storageKey === item.storageKey && contentDigest === item.contentDigest) return item;
+        changed = true;
+        return {
+          ...item,
+          ...(storageKey ? { storageKey } : {}),
+          ...(contentDigest ? { contentDigest } : {}),
+        };
+      });
+      return changed ? { ...prev, courseMaterials } : prev;
+    });
+  };
+
   const addCourseMaterials = (files: File[]) => {
     // The set is frozen for the duration of generate-prep: adding is inert
     // while `preparingGenerate` is set (the toolbar affordance is disabled
     // via the same state), so nothing can slip into the set mid-prep.
     if (preparingGenerate) return;
-    const dedupedFiles = dedupeCourseMaterialFiles(form.courseMaterials, files);
-    const startOrder = form.courseMaterials.length + 1;
+    // Attached into the folder on screen, and therefore filed under it. Both
+    // the dedupe and the numbering are scoped to that folder: the same file in
+    // two folders is two entries (they are separate chapter lists), and each
+    // folder numbers its own chapters from 1.
+    const folderId = currentFolderId;
+    const dedupedFiles = dedupeCourseMaterialFiles(visibleMaterials, files);
+    const startOrder = visibleMaterials.length + 1;
     const additions = dedupedFiles.map((file, index) => ({
       id: nanoid(8),
       file,
@@ -534,24 +908,35 @@ function HomePage() {
       lastModified: file.lastModified,
       type: file.type,
       order: startOrder + index,
+      ...(folderId ? { folderId } : {}),
     }));
 
     if (additions.length === 0) return;
     setForm((prev) => {
       // Pure updater: drop any addition the latest state already carries — by
-      // id (a replayed or superseded update) or by content fingerprint (two
-      // addCourseMaterials calls in one render batch both dedupe against the
-      // same stale closure list, so the same file could otherwise enter twice
-      // under two ids and ingest/extract twice) — then append the rest.
+      // id (a replayed or superseded update) or by content fingerprint *within
+      // this folder* (two addCourseMaterials calls in one render batch both
+      // dedupe against the same stale closure list, so the same file could
+      // otherwise enter twice under two ids and ingest/extract twice) — then
+      // append the rest. The fingerprint check re-derives the view from `prev`
+      // rather than reusing the closure's list, so the guard sees the same rows
+      // the dedupe above did.
+      const alreadyFiled = courseMaterialsInView(prev.courseMaterials, {
+        folderId,
+        knownFolderIds: folderIds,
+      });
       const missing = additions.filter((addition) => {
         if (prev.courseMaterials.some((item) => item.id === addition.id)) return false;
-        return !prev.courseMaterials.some(
+        return !alreadyFiled.some(
           (item) => courseMaterialFingerprint(item) === courseMaterialFingerprint(addition),
         );
       });
       if (missing.length === 0) return prev;
       return { ...prev, courseMaterials: [...prev.courseMaterials, ...missing] };
     });
+    // Capture the bytes for the rows just added, so the directory survives a
+    // reload on this device (see `restoreCourseMaterials`).
+    void captureMaterialStorageKeys(additions);
   };
 
   const removeCourseMaterial = (id: string) => {
@@ -559,21 +944,60 @@ function HomePage() {
     // while `preparingGenerate` is set (the toolbar affordance is disabled
     // via the same state), so nothing can slip out of the set mid-prep.
     if (preparingGenerate) return;
-    setForm((prev) => ({
-      ...prev,
-      courseMaterials: prev.courseMaterials
-        .filter((item) => item.id !== id)
-        .map((item, index) => ({ ...item, order: index + 1 })),
-    }));
+    // The cached bytes belong to the directory, not to the page: drop them with
+    // the row so removing a chapter really frees the space. Safe because a
+    // prepare in flight freezes this list (the guard above), so no session can
+    // be holding the key that is about to be deleted.
+    const removed = form.courseMaterials.find((item) => item.id === id);
+    if (removed?.storageKey) {
+      void deleteDocumentBlob(removed.storageKey).catch((err) => {
+        log.warn('Could not drop the removed material bytes:', err);
+      });
+    }
+    setForm((prev) => {
+      const target = prev.courseMaterials.find((item) => item.id === id);
+      if (!target) return prev;
+      // Renumber within the removed row's own folder: `order` counts positions
+      // in the chapter list being shown, and deleting chapter 1 of one folder
+      // must not renumber every other folder's chapters.
+      let ordinal = 0;
+      return {
+        ...prev,
+        courseMaterials: prev.courseMaterials
+          .filter((item) => item.id !== id)
+          .map((item) => {
+            if (item.folderId !== target.folderId) return item;
+            ordinal += 1;
+            return item.order === ordinal ? item : { ...item, order: ordinal };
+          }),
+      };
+    });
   };
 
-  const handleGenerate = async () => {
+  /**
+   * Build a generation session and hand it to the preview page, for any kind of
+   * lesson.
+   *
+   * `'lesson'` is the composer-driven path: the requirement text is the user's,
+   * and the outline step produces a normal teaching classroom. `'unitQuiz'` and
+   * `'caseTeaching'` are driven by the chapter directory instead — neither has a
+   * composer step, so each is gated on a selected chapter and writes its own
+   * requirement — and each tells the outline step to emit a single scene of its
+   * own kind. Everything else is shared: the click-time snapshot, the
+   * archived-derivation reuse, and the session itself.
+   */
+  const runGeneration = async (lessonKind: 'lesson' | 'unitQuiz' | 'caseTeaching') => {
     // No model/provider guard here: generation is gated by `canGenerate`
     // (requires a usable provider), and under the #580 invariant a usable
     // provider always has a concrete model. State A (no usable provider)
     // surfaces through the toolbar's single Configure-Provider affordance.
     if (preparingGenerate) return;
-    if (!form.requirement.trim()) {
+    // The composer is the ordinary path's whole input; the chapter-driven paths
+    // have no composer step, so they are gated on a selected chapter instead —
+    // the same condition the directory's own buttons are enabled by.
+    if (lessonKind !== 'lesson') {
+      if (!visibleSelectedMaterialId) return;
+    } else if (!form.requirement.trim()) {
       setError(t('upload.requirementRequired'));
       return;
     }
@@ -586,7 +1010,48 @@ function HomePage() {
     // web-search toggle), so neither can change under the session build below.
     // Capture both at click time and build the session from this snapshot,
     // never from live form state or live store state.
-    const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+    //
+    // The snapshot is the *folder on screen*, not the whole directory: folders
+    // are separate chapter lists, so generating from inside one must not sweep
+    // up every other folder's materials. This is the one place where using the
+    // unfiltered list would be silently wrong rather than merely untidy — the
+    // lesson would come out with chapters the user cannot see.
+    const frozenMaterials = [...visibleMaterials].sort((a, b) => a.order - b.order);
+    // The folder is frozen the same way, and for the same reason: the course is
+    // filed into the folder that was on screen when the user pressed Enter, not
+    // whichever folder is active by the time the async generation resolves (the
+    // preview page has navigated them away by then). Undefined means the user
+    // generated from the root view — the course stays unfiled, which is the
+    // behaviour every generation had before this was added. Mirrors the
+    // `importFolderRef` capture in the import flow below.
+    const frozenFolderId = currentFolderId;
+    // Chapter selection is applied here, from the same click-time snapshot, and
+    // deliberately before anything is stored or extracted: the unselected
+    // chapters are never copied to a blob and never sent for extraction, so the
+    // saving is real work avoided rather than a smaller prompt over the same
+    // cost. `order` is reassigned in the loop below, which means the selected
+    // chapter becomes order 1 and every order-driven consumer downstream
+    // (extraction ordering, section headers, stable image ids, the legacy
+    // pdfStorageKey) keeps working with no special case.
+    const frozenSelectedMaterialId = visibleSelectedMaterialId;
+    const materialsToIngest = frozenSelectedMaterialId
+      ? frozenMaterials.filter((material) => material.id === frozenSelectedMaterialId)
+      : frozenMaterials;
+    // A chapter restored from the synced directory on a device that never held
+    // its bytes is still usable: the extraction of those bytes is archived
+    // server-side under the digest the directory carries, and the generation
+    // step falls back to it rather than parsing bytes it does not have (see
+    // `parseSource` in the generation preview). What cannot be resolved is a
+    // chapter with *neither* bytes nor a digest — an entry stored before
+    // digests existed, or one whose browser cannot compute one — so only that
+    // is refused, by name, before anything is copied or sent.
+    // The same predicate the chapter directory renders by, so a row that looks
+    // usable here and there cannot be refused on generate.
+    const ungeneratable = materialsToIngest.find((material) => !isCourseMaterialUsable(material));
+    if (ungeneratable) {
+      setError(t('toolbar.chapterFileMissingNamed', { name: ungeneratable.name }));
+      return;
+    }
     const settingsSnapshot = useSettingsStore.getState();
     const frozenPdfProviderId = settingsSnapshot.pdfProviderId;
     const frozenPdfProviderConfig = settingsSnapshot.pdfProvidersConfig?.[
@@ -607,14 +1072,192 @@ function HomePage() {
     try {
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
-        requirement: form.requirement,
+        // The chapter-driven paths have no composer, so each states its own
+        // intent. What routes the outline step is `lessonKind` below, not this
+        // text — this is only what the model reads.
+        requirement:
+          lessonKind === 'unitQuiz'
+            ? t('toolbar.unitQuizRequirement', { name: materialsToIngest[0]?.name ?? '' })
+            : lessonKind === 'caseTeaching'
+              ? t('toolbar.caseTeachingRequirement', { name: materialsToIngest[0]?.name ?? '' })
+              : form.requirement,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         // Course-level web search now lives in settings (课程模型配置 → 联网调研)
         webSearch: useSettingsStore.getState().webSearchEnabled || undefined,
-        interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
-        ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
+        // The three paths carry different generation switches and none should
+        // leak into another: the single-scene kinds are never interactive-first
+        // and never vocational, so each sets its own kind and nothing else.
+        ...(lessonKind === 'lesson'
+          ? {
+              interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
+              ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
+            }
+          : { lessonKind }),
       };
+
+      // Copy the click-time snapshot's bytes into this device's blob store and
+      // describe them as session sources. More than one branch needs this — a
+      // normal generation to parse and bundle them, and the extract-only
+      // session below to run the parse an existing classroom's chapters read
+      // from — so it is built here, once, rather than inside either caller.
+      const buildDocumentSources = async (
+        providerId: string | undefined,
+      ): Promise<SessionDocumentSource[]> => {
+        const sources: SessionDocumentSource[] = [];
+        const storedDocumentKeys: string[] = [];
+        try {
+          for (const [index, item] of materialsToIngest.entries()) {
+            const file = item.file;
+            // Reuse the key captured when the file was attached: those bytes
+            // are already in this device's IndexedDB — that is precisely what
+            // lets the directory survive a reload — so storing them again
+            // would only duplicate the file. A key stored here belongs to the
+            // session and is rolled back below if this loop throws; a reused
+            // one is the directory's and is not.
+            let storageKey = item.storageKey;
+            if (file) {
+              if (!storageKey) {
+                storageKey = await storeDocumentBlob(file);
+                storedDocumentKeys.push(storageKey);
+              }
+            } else if (!storageKey) {
+              // The guard above admits a chapter without bytes only when it
+              // carries a digest, and a stored directory entry always carries
+              // the key those bytes live under on the device that uploaded
+              // them. A resolved source needs that key (`SessionDocumentSource`
+              // requires it), so an entry with neither is not one this session
+              // can be built from.
+              throw new Error(`${item.name} is not available on this device`);
+            }
+            sources.push({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              lastModified: item.lastModified,
+              // The MIME type comes from the file when there is one and from
+              // the directory row otherwise; a restored row stores the type it
+              // was uploaded with, which is the value `file.type` gave.
+              mimeType: normalizeDocumentMimeType({
+                mimeType: file?.type ?? item.type,
+                fileName: item.name,
+              }),
+              order: index + 1,
+              storageKey,
+              providerId,
+              ...(item.contentDigest ? { contentDigest: item.contentDigest } : {}),
+            });
+          }
+        } catch (error) {
+          await Promise.allSettled(storedDocumentKeys.map((key) => deleteDocumentBlob(key)));
+          throw error;
+        }
+        return sources;
+      };
+
+      // ── Materials that already produced a classroom ──
+      // The same file uploaded again is how the user asks for the classroom it
+      // already produced — to open it, or to fill in the extraction its
+      // chapters read from — and never how they ask for a second one from
+      // identical material. The link is `Stage.sourceDigests`, matched against
+      // the course list this page already holds, so recognizing it costs no
+      // extra request. Only a real match redirects: material that no course
+      // names, and material from before the link existed (no digests), both
+      // generate normally. Among several matches the most recently updated
+      // one wins, which is the order `classrooms` arrives in.
+      const digestSet = new Set(
+        materialsToIngest
+          .map((material) => material.contentDigest)
+          .filter((digest): digest is string => typeof digest === 'string' && digest.length > 0),
+      );
+      // A match means the classroom was generated from *everything* selected
+      // now — not merely from something. Overlap alone accepts the case this is
+      // most likely to meet: a folder already holding the course its first
+      // chapters produced, one more chapter uploaded later, generating without
+      // narrowing the selection. That course predates the new chapter, so
+      // reusing it would drop the chapter the user just added — quietly, since
+      // the archive still receives it. Requiring containment turns that into a
+      // second course built from all the selected material, which is the honest
+      // reading of "generate from these".
+      const existingClassroom =
+        digestSet.size > 0
+          ? classrooms.find(
+              (classroom) =>
+                // A quiz classroom and the teaching classroom built from the
+                // same material carry the same digests, so the digest match
+                // alone cannot tell them apart — and reopening the wrong one
+                // would hand the user a lesson of the other kind. Courses
+                // generated before `lessonKind` existed have none, and read as
+                // teaching lessons, which is exactly what they are.
+                (classroom.lessonKind ?? 'lesson') === lessonKind &&
+                [...digestSet].every((digest) => classroom.sourceDigests?.includes(digest)),
+            )
+          : undefined;
+      if (existingClassroom) {
+        // "Already archived" is asked per material *and* per extractor, and
+        // read the same way generation reads it — including its refusal to
+        // call a blank-but-successful parse usable. One chapter still missing
+        // its derivation is reason enough to extract rather than skip, and is
+        // exactly the case this upload exists for.
+        const archived = await Promise.all(
+          materialsToIngest.map((material) =>
+            material.contentDigest
+              ? hasUsableArchivedExtraction({
+                  contentDigest: material.contentDigest,
+                  ...(frozenPdfProviderId ? { extractorId: frozenPdfProviderId } : {}),
+                })
+              : false,
+          ),
+        );
+        if (archived.every(Boolean)) {
+          // Reusing an existing classroom still files it into the folder the
+          // user generated from — but only when it has no folder yet. One that
+          // is already filed elsewhere stays put: moving it silently would take
+          // it away from where it was deliberately put (see
+          // `docs/folder-auto-assign-analysis.md` §八·1). Unlike the create
+          // path, no ordering constraint applies here: the reused classroom's
+          // row already exists, so the folder route's existence check passes.
+          if (frozenFolderId && !existingClassroom.folderId) {
+            try {
+              await setStageFolder(existingClassroom.id, frozenFolderId);
+            } catch (err) {
+              // Failing to file it is not failing to open it: the classroom
+              // still opens, it just stays where it was.
+              log.error('Failed to file reused classroom into folder:', err);
+              toast.error(t('classroom.moveFailed'));
+            }
+          }
+          toast.info(t('upload.existingClassroomOpened'));
+          router.push(`/classroom/${existingClassroom.id}`);
+          return;
+        }
+
+        // Extraction only. The classroom keeps its content and its id; this
+        // upload exists to fill in the derivation its chapters read from, so
+        // the preview page runs the extraction step and stops there
+        // (`extractOnly`) instead of building a second course.
+        const extractOnlySession = {
+          sessionId: nanoid(),
+          requirements,
+          pdfText: '',
+          pdfImages: [],
+          imageStorageIds: [],
+          documentSources: await buildDocumentSources(frozenPdfProviderId),
+          pdfStorageKey: undefined,
+          pdfFileName: undefined,
+          documentMimeType: undefined,
+          pdfProviderId: frozenPdfProviderId,
+          pdfProviderConfig: frozenPdfProviderConfig,
+          sceneOutlines: null,
+          currentStep: 'generating' as const,
+          extractOnly: true,
+          targetStageId: existingClassroom.id,
+        } satisfies GenerationSessionState;
+        sessionStorage.setItem('generationSession', JSON.stringify(extractOnlySession));
+        toast.info(t('upload.existingClassroomExtracting'));
+        router.push('/generation-preview');
+        return;
+      }
 
       let documentSources: SessionDocumentSource[] | undefined;
       let pdfProviderId: string | undefined;
@@ -622,36 +1265,12 @@ function HomePage() {
         | { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
         | undefined;
 
-      if (frozenMaterials.length > 0) {
+      if (materialsToIngest.length > 0) {
         // The session is built from the click-time snapshot (frozen above),
         // never from live store state.
         pdfProviderId = frozenPdfProviderId;
         pdfProviderConfig = frozenPdfProviderConfig;
-
-        const storedDocumentKeys: string[] = [];
-        try {
-          documentSources = [];
-          for (const [index, item] of frozenMaterials.entries()) {
-            const storageKey = await storeDocumentBlob(item.file);
-            storedDocumentKeys.push(storageKey);
-            documentSources.push({
-              id: item.id,
-              name: item.name,
-              size: item.size,
-              lastModified: item.lastModified,
-              mimeType: normalizeDocumentMimeType({
-                mimeType: item.file.type,
-                fileName: item.file.name,
-              }),
-              order: index + 1,
-              storageKey,
-              providerId: pdfProviderId,
-            });
-          }
-        } catch (error) {
-          await Promise.allSettled(storedDocumentKeys.map((key) => deleteDocumentBlob(key)));
-          throw error;
-        }
+        documentSources = await buildDocumentSources(frozenPdfProviderId);
       }
 
       const sessionState = {
@@ -669,6 +1288,10 @@ function HomePage() {
         pdfProviderConfig,
         sceneOutlines: null,
         currentStep: 'generating' as const,
+        // Carried only when the user generated from a folder view, so a root
+        // generation keeps the exact session shape it had before this field
+        // existed. The preview page files the course only when it is present.
+        ...(frozenFolderId ? { targetFolderId: frozenFolderId } : {}),
       };
       sessionStorage.setItem('generationSession', JSON.stringify(sessionState));
 
@@ -683,6 +1306,99 @@ function HomePage() {
     }
   };
 
+  /** The composer-driven path: generate an ordinary teaching classroom. */
+  const handleGenerate = () => runGeneration('lesson');
+
+  /**
+   * The directory-driven path: one click on the selected chapter produces a
+   * quiz-only classroom — the same material, no teaching slides.
+   */
+  const handleUnitQuiz = () => runGeneration('unitQuiz');
+
+  /**
+   * The directory-driven case path: one click on the selected chapter produces
+   * a case-teaching classroom — a single case scene built around that chapter's
+   * knowledge points, with the discussion questions the learner works through.
+   */
+  const handleCaseTeaching = () => runGeneration('caseTeaching');
+
+  /**
+   * Selecting a chapter also writes the composer's requirement — the sentence
+   * "start chapter N …" — so one click on a row is enough to arm the send
+   * button. It is a suggestion, never a submission: the button lights up and
+   * the user still presses it themselves.
+   *
+   * The write is conditional, because clicking a chapter must never eat words
+   * the user typed. Only an empty composer, or one still holding the sentence
+   * written here last, is written to; anything else means the user has a prompt
+   * of their own, which is left untouched — and this helper forgets its own
+   * sentence for good, so no later click can overwrite it either. Deselecting
+   * clears exactly what was written here and nothing else.
+   *
+   * It deliberately does not go through `updateForm`: that writes the draft
+   * cache (`requirementDraft`), and a sentence the app generated is not the
+   * user's draft — it must not come back on the next visit.
+   *
+   * The row is looked up in `visibleMaterials`, not in `form.courseMaterials`,
+   * because the number the panel shows is the view's ordinal: the stored
+   * `order` of a chapter filed in another folder disagrees with it, and the
+   * sentence has to name the chapter the user just clicked.
+   */
+  const autoFilledRequirementRef = useRef<string | null>(null);
+
+  const applyChapterSelection = (id: string | null) => {
+    const chapter = id ? visibleMaterials.find((material) => material.id === id) : undefined;
+    const current = form.requirement;
+    const autoFilled = autoFilledRequirementRef.current;
+    const isAutoFilled = autoFilled !== null && current === autoFilled;
+
+    let nextRequirement = current;
+    let nextAutoFilled: string | null = autoFilled;
+
+    if (id === null) {
+      // Deselect: only what this helper wrote is cleared. A prompt the user
+      // wrote outlives the selection it was written next to.
+      if (isAutoFilled) {
+        nextRequirement = '';
+        nextAutoFilled = null;
+      }
+    } else if (chapter && (current.trim() === '' || isAutoFilled)) {
+      nextRequirement = t('toolbar.chapterRequirementTemplate', {
+        order: chapter.order,
+        title: resolveChapterTitle(chapter, classrooms),
+      });
+      nextAutoFilled = nextRequirement;
+    } else if (chapter) {
+      nextAutoFilled = null;
+    }
+
+    autoFilledRequirementRef.current = nextAutoFilled;
+    setForm((prev) => ({ ...prev, selectedMaterialId: id, requirement: nextRequirement }));
+  };
+
+  /**
+   * The same "back to home" gesture, for the one case where the home page is
+   * already mounted: leaving a folder is a view change (`currentFolderId`), not
+   * a route change, so nothing remounts and nothing else would clear the
+   * composer. The flag is consumed here rather than left for a later mount —
+   * this view is the one the gesture was aimed at, and replaying it on the next
+   * visit would wipe a selection the user made afterwards.
+   *
+   * Everything the user typed goes, not just the sentence this page wrote for a
+   * selected chapter: the two are indistinguishable once edited, and the gesture
+   * promises a clean start.
+   */
+  useEffect(() => {
+    const handleReset = () => {
+      consumePendingHomeComposerReset();
+      clearRequirementCache();
+      autoFilledRequirementRef.current = null;
+      setForm((prev) => ({ ...prev, requirement: '', selectedMaterialId: null }));
+    };
+    window.addEventListener(HOME_COMPOSER_RESET_EVENT, handleReset);
+    return () => window.removeEventListener(HOME_COMPOSER_RESET_EVENT, handleReset);
+  }, [clearRequirementCache]);
+
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -695,7 +1411,11 @@ function HomePage() {
     return date.toLocaleDateString();
   };
 
-  const canGenerate = !!form.requirement.trim() && hasUsableProvider;
+  // Generating waits for the stored directory: `form.courseMaterials` is still
+  // an empty list while the restore is in flight, and a session built from it
+  // would drop every chapter the user has — which, on a device that never held
+  // the bytes, are precisely the chapters that only the directory knows about.
+  const canGenerate = !!form.requirement.trim() && hasUsableProvider && directoryRestored;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -704,8 +1424,10 @@ function HomePage() {
     }
   };
 
+  // `relative` is the positioning context for the usage guide, which anchors
+  // itself to the band of empty space right of the centred hero.
   return (
-    <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+    <div className="relative min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
       <input
         ref={fileInputRef}
         type="file"
@@ -722,6 +1444,27 @@ function HomePage() {
           className="hidden"
         />
       )}
+      {/* ═══ Top-left chapter directory ═══ */}
+      {/* The chapters of the folder on screen, listed in order, so a lesson can
+          be generated from a single chapter. The list lives here rather than
+          inside the toolbar's upload popover so the chapters are visible
+          without opening anything; which chapters those are is decided by the
+          active folder (see `visibleMaterials`), and selection state stays
+          owned by the form below and is only reported back up. In the root
+          view it renders nothing while no unfiled material is attached; inside
+          a folder it renders even when empty, so an empty folder reads as
+          "this folder has no chapters yet" rather than as a missing panel. */}
+      <ChapterDirectory
+        courseMaterials={visibleMaterials}
+        selectedMaterialId={visibleSelectedMaterialId}
+        folderName={currentFolder?.name}
+        onSelectMaterial={applyChapterSelection}
+        onCourseMaterialRemove={removeCourseMaterial}
+        materialsLocked={preparingGenerate}
+        onUnitQuiz={handleUnitQuiz}
+        onCaseTeaching={handleCaseTeaching}
+      />
+
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
@@ -901,11 +1644,12 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
-                  courseMaterials={form.courseMaterials}
+                  courseMaterials={visibleMaterials}
                   onCourseMaterialsAdd={addCourseMaterials}
                   onCourseMaterialRemove={removeCourseMaterial}
                   onPdfError={setError}
                   materialsLocked={preparingGenerate}
+                  selectedMaterialId={visibleSelectedMaterialId}
                   onSettingsOpen={(section) => {
                     setSettingsSection(section);
                     setSettingsOpen(true);
@@ -941,6 +1685,7 @@ function HomePage() {
 
               {/* Send button */}
               <button
+                data-composer-submit=""
                 onClick={handleGenerate}
                 disabled={!canGenerate || preparingGenerate}
                 className={cn(
@@ -1026,6 +1771,9 @@ function HomePage() {
         </AnimatePresence>
       </motion.div>
 
+      {/* ═══ Usage guide — the empty band to the right of the hero ═══ */}
+      <HomeUsageGuide skipEnter={swapped} />
+
       {/* ═══ Recent classrooms — collapsible ═══ */}
       {/* The library action bar is always present after hydration: it carries
           the New-folder / import / search actions, so a brand-new user with
@@ -1044,10 +1792,39 @@ function HomePage() {
           <div className="group w-full flex items-center gap-4 h-9">
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
             <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
+              {/* Leaving a folder is its own gesture with its own label. It used
+                  to hide inside the "recent" disclosure below, which made one
+                  control mean two different things depending on where the user
+                  stood — and left the folder exit looking like a collapse, so
+                  nobody could tell which of the two had just eaten their prompt.
+                  One control, one meaning. */}
+              {currentFolderId && (
+                <>
+                  <button
+                    type="button"
+                    data-home-back-button=""
+                    onClick={() => {
+                      // The chapter picked inside the folder has no row in the
+                      // root view this returns to, so a sentence naming it would
+                      // be pointing at nothing. Reset first, then switch views.
+                      resetHomeComposer();
+                      setCurrentFolderId(undefined);
+                    }}
+                    className="flex items-center gap-1.5 hover:text-foreground/70 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    {t('classroom.backToHome')}
+                  </button>
+                  <span aria-hidden="true" className="w-px h-3.5 bg-border/60" />
+                </>
+              )}
               <button
+                type="button"
                 onClick={() => {
-                  if (currentFolderId) setCurrentFolderId(undefined);
-                  else persistRecentOpen(!recentOpen);
+                  // A disclosure toggle, and nothing else. Collapsing the panel
+                  // is not "going home": nothing unmounts and no route changes,
+                  // so a reset here would silently eat a prompt for no reason.
+                  persistRecentOpen(!recentOpen);
                 }}
                 className="flex items-center gap-2 hover:text-foreground/70 transition-colors cursor-pointer"
               >
@@ -1062,7 +1839,7 @@ function HomePage() {
                   </>
                 )}
                 <span className="text-[11px] tabular-nums opacity-60">
-                  {currentFolder ? currentFolderClassrooms.length : classrooms.length}
+                  {currentFolder ? currentFolderClassrooms.length : coursewareClassrooms.length}
                 </span>
                 <motion.div
                   animate={{ rotate: recentOpen ? 180 : 0 }}
@@ -1154,6 +1931,9 @@ function HomePage() {
                 )}
               </AnimatePresence>
 
+              {/* Narrow-viewport entry to the usage guide the wide card shows. */}
+              <HomeUsageGuideEntry />
+
               <button
                 onClick={triggerImport}
                 disabled={importing}
@@ -1205,7 +1985,7 @@ function HomePage() {
                 transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
                 className="w-full overflow-hidden"
               >
-                {folders.length === 0 && classrooms.length === 0 ? (
+                {folders.length === 0 && coursewareClassrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
                     {t('classroom.emptyLibraryHint')}
                   </div>
@@ -1229,13 +2009,20 @@ function HomePage() {
                         <button
                           type="button"
                           onClick={() => {
+                            // Searching inside a folder leaves one the same way
+                            // the folder breadcrumb does, so it resets on the
+                            // same condition: a chapter filed there has no row
+                            // in the root view this returns to. Exiting search
+                            // at the root changes nothing the composer points
+                            // at, so it must not cost the user their prompt.
+                            if (currentFolderId) resetHomeComposer();
                             setCurrentFolderId(undefined);
                             setSearchQuery('');
                             setSearchOpen(false);
                           }}
                           className="hover:text-foreground transition-colors"
                         >
-                          {t('classroom.recentClassrooms')}
+                          {t('classroom.backToHome')}
                         </button>
                         <ChevronRight className="size-3.5" />
                         <span className="text-foreground font-medium">

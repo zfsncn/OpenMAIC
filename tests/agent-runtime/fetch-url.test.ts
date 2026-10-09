@@ -167,13 +167,13 @@ describe('fetch_url network and extraction', () => {
     ).rejects.toMatchObject({ reason: 'blocked' } satisfies Partial<FetchUrlError>);
   });
 
-  it('selects configured self-hosted MinerU for PDF extraction', async () => {
-    vi.spyOn(providerConfig, 'getServerPDFProviders').mockReturnValue({ mineru: {} });
-    const mineru = getDocumentExtractorProvider('mineru')!;
+  it('selects configured server-managed AliDocMind for PDF extraction', async () => {
+    vi.spyOn(providerConfig, 'getServerPDFProviders').mockReturnValue({ alidocmind: {} });
+    const aliDocMind = getDocumentExtractorProvider('alidocmind')!;
     const unpdf = getDocumentExtractorProvider('unpdf')!;
-    const mineruExtract = vi
-      .spyOn(mineru, 'extract')
-      .mockResolvedValue(pdfArtifact('mineru', 'MinerU 正文'.repeat(50)));
+    const aliDocMindExtract = vi
+      .spyOn(aliDocMind, 'extract')
+      .mockResolvedValue(pdfArtifact('alidocmind', 'AliDocMind 正文'.repeat(50)));
     const unpdfExtract = vi.spyOn(unpdf, 'extract');
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response((await pdfBytes()) as unknown as BodyInit, {
@@ -187,9 +187,11 @@ describe('fetch_url network and extraction', () => {
       minChars: 20,
     });
 
-    expect(result.markdown).toContain('MinerU 正文');
-    expect(mineruExtract).toHaveBeenCalledWith(
-      expect.objectContaining({ config: expect.objectContaining({ providerId: 'mineru' }) }),
+    expect(result.markdown).toContain('AliDocMind 正文');
+    expect(aliDocMindExtract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ providerId: 'alidocmind' }),
+      }),
     );
     expect(unpdfExtract).not.toHaveBeenCalled();
   });

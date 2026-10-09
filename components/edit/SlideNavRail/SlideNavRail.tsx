@@ -10,6 +10,7 @@ import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
 import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { resetHomeComposer } from '@/lib/home/composer-reset';
 import { useDeletedSceneRecycle } from '@/lib/edit/deleted-scene-recycle';
 import { duplicateSlideScene } from '@/lib/edit/slide-defaults';
 import {
@@ -402,7 +403,12 @@ export function SlideNavRail() {
           {!collapsed && !isDesktop && (
             <button
               type="button"
-              onClick={() => router.push('/')}
+              onClick={() => {
+                // Back to home is one gesture with one outcome; see
+                // `resetHomeComposer`.
+                resetHomeComposer();
+                router.push('/');
+              }}
               title={t('generation.backToHome')}
               className="flex items-center gap-2 cursor-pointer rounded-lg px-1.5 -mx-1.5 py-1 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/60 active:scale-[0.97] transition-all duration-150"
             >
