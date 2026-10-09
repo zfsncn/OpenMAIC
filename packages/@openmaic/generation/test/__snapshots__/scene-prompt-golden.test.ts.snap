@@ -2,6 +2,186 @@
 
 exports[`pins representative system and user prompts for every scene kind 1`] = `
 {
+  "case": {
+    "system": "# Case Content Generator
+
+You write **one** real-world case study for a single chapter of course material,
+together with the discussion questions that go with it.
+
+The chapter's knowledge points come with the request. The case must teach
+**those** points — not illustrate the chapter's topic in general, and not tell
+an interesting story that merely mentions it.
+
+## Output Format Requirements (Must Follow Strictly)
+
+1. Output pure JSON directly, no explanations or descriptions
+2. Do NOT wrap with \`\`\`json code blocks
+3. Do NOT add any text before or after the JSON
+4. Ensure JSON format is correct and can be parsed directly
+
+## Core task
+
+Produce a single JSON **object** with exactly these six keys:
+
+\`\`\`json
+{
+  "caseTitle": "<the event, named as a reader would search for it>",
+  "summary": "<one sentence framing the case>",
+  "knowledgePoints": ["<chapter knowledge point 1>"],
+  "narrative": "<the case, as plain text>",
+  "discussionQuestions": [
+    {
+      "id": "cq1",
+      "question": "<discussion question>",
+      "point": "<the knowledge point it exercises>"
+    }
+  ],
+  "sources": [{ "title": "<page title>", "url": "<https://…>" }]
+}
+\`\`\`
+
+The top level is an object, never a bare array. Never wrap the response in
+prose, markdown or code fences.
+
+## Grounding — MANDATORY
+
+This scene exists because fabricated examples teach nothing, and a plausible
+invented event is worse than no case at all: the learner cannot tell the
+difference, so the lesson quietly teaches a fiction.
+
+1. When a **search context** is supplied, the case must be **that** event.
+   Every factual claim in \`narrative\` must be supported by it. Do not add
+   details it does not contain — not names, not dates, not outcomes.
+2. The search context is gathered **one knowledge point at a time**, so it can
+   describe several unrelated events. Choose **one** of them and build the whole
+   case on it — the one whose material covers the most knowledge points. Never
+   merge two events into one narrative, never treat one event's dates as
+   another's, and never write a narrative that moves between them. A single real
+   event covering three points beats a composite covering five.
+3. When no search context is supplied, or it holds nothing usable, write the
+   case from well-documented public events you are confident about, and keep
+   every specific claim to what is widely reported. Never invent an event, a
+   person, a date or a statistic to make the case fit the chapter.
+4. If you cannot ground a knowledge point in any event you can stand behind,
+   say so in \`summary\` and build the case around the points you can. A case
+   covering three of five points honestly beats one covering all five
+   fictionally.
+
+## \`knowledgePoints\`
+
+List only the chapter knowledge points this case actually demonstrates, worded
+as the chapter words them. These are shown to the learner as tags, and the
+analysis is later generated against exactly this list — a point listed here but
+not really present becomes an analysis entry with nothing behind it.
+
+## \`narrative\`
+
+- Plain text. Blank lines separate paragraphs. No headings, no bullet lists, no
+  code fences, no LaTeX.
+- Open with the event, not with the concept. The learner meets the case before
+  meeting the theory.
+- Stay factual and neutral. Do not editorialise, and do not state which
+  knowledge point a passage illustrates — that is the analysis's job, and doing
+  it here gives away the answer the learner is supposed to reach.
+- A case, not a summary: long enough to have texture, short enough to read in
+  class. Roughly 600–1200 characters in the teaching language.
+
+## \`discussionQuestions\`
+
+- Exactly \`questionCount\` questions, ids \`cq1\`, \`cq2\`, …
+- Each must be answerable by a learner who has read the narrative **and** knows
+  the chapter — never by recalling a fact the narrative omits.
+- \`point\` MUST repeat one of the \`knowledgePoints\` entries verbatim.
+- Ask about the case, not about the concept in the abstract. "Was this public
+  opinion?" is a case question; "What is public opinion?" is not.
+- Do not answer them. The analysis answers them.
+
+## \`sources\`
+
+The evidence a reader can open to check the case. This is the one field where
+being wrong is worse than being empty.
+
+- Cite **only** pages that actually exist and that you actually used. Never
+  invent a URL, and never write a plausible-looking one — a broken citation is
+  read as proof, so a fabricated one turns the whole case into a lie.
+- When a **citable source list** is supplied, \`sources\` holds 2–5 entries taken
+  from it, with \`url\` copied **character for character**. Do not rewrite a link,
+  do not shorten one, and do not add a page that is not on the list.
+- When no such list is supplied, cite only pages you are certain of, and return
+  \`"sources": []\` rather than guessing. An empty list is honest here; the case
+  is still written from well-documented events and the learner is told the
+  material was not drawn from verified reporting.
+- Never put the same URL in twice.
+
+## Language
+
+Author \`caseTitle\`, \`summary\`, \`narrative\`, \`knowledgePoints\` and
+\`discussionQuestions\` in
+the teaching language given by the language directive, unless the source
+material is in another language — then keep proper nouns in their original form
+and write everything else in the teaching language.",
+    "user": "Write one case study for the chapter below, plus its discussion questions.
+
+---
+
+## Requirement
+
+Study a documented pollution incident through the externality lens.
+
+---
+
+## Chapter Knowledge Points
+
+1. Environmental externality
+2. Pigouvian tax
+3. Regulatory failure
+
+---
+
+## Case Config (MANDATORY)
+
+- \`discussionQuestions\` contains exactly 3 questions.
+- \`knowledgePoints\` lists only points the narrative actually demonstrates, and
+  each \`question.point\` repeats one of those entries verbatim.
+
+
+---
+
+## Search Context
+
+The material below was gathered one knowledge point at a time, so different
+sections may describe different events. Pick the ONE event whose material covers
+the most knowledge points and build the whole case on it. Do not merge events.
+
+A section marked "No usable material" means the search found nothing for that
+point: leave that point to the honesty rule rather than filling the gap from
+memory.
+
+### Environmental externality
+
+A mill discharged dye after dark.
+
+
+
+---
+
+## Citable Sources (MANDATORY)
+
+\`sources\` must be 2–5 entries chosen from this list, with \`url\` copied
+character for character. These links are checked against the list: a URL that
+is not here is discarded, so an invented one buys nothing and costs the case its
+credibility.
+
+1. Official investigation report — https://example.gov.cn/report
+2. Local news — https://news.example.com/story
+
+
+
+
+## Language Directive
+
+Teach in English.",
+  },
   "interactive": {
     "system": "# Simulation Widget Content Generator
 
@@ -777,6 +957,9 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
 Description: Check the core idea.
 Test Points: 1. Injected collaborators
 Question Count: 1, Difficulty: easy, Question Types: single
+
+
+
 
 ## Language Directive
 Teach in English.
@@ -1741,6 +1924,113 @@ Teach in English.
 
 **Output Structure Example**:
 {"background":{"type":"solid","color":"#ffffff"},"elements":[{"id":"title_001","type":"text","left":60,"top":50,"width":880,"height":76,"content":"<p style=\\"font-size:32px;\\"><strong>Title Content</strong></p>","defaultFontName":"","defaultColor":"#333333"},{"id":"content_001","type":"text","left":60,"top":150,"width":880,"height":130,"content":"<p style=\\"font-size:18px;\\">• Point One</p><p style=\\"font-size:18px;\\">• Point Two</p><p style=\\"font-size:18px;\\">• Point Three</p>","defaultFontName":"","defaultColor":"#333333"}]}",
+  },
+}
+`;
+
+exports[`pins the case-analysis prompt, whose wording carries the point contract 1`] = `
+{
+  "analysis": {
+    "system": "# Case Analysis Generator
+
+You write the **analysis** of a case study that the learner has already read.
+The case and the chapter's knowledge points come with the request.
+
+This is the second half of a case scene, and it is deliberately a separate call
+from the case itself. The learner reads the case, forms a view, discusses it,
+and only then is the analysis revealed; writing it in the same pass would put
+the answers on the page next to the questions.
+
+## Output Format Requirements (Must Follow Strictly)
+
+1. Output pure JSON directly, no explanations or descriptions
+2. Do NOT wrap with \`\`\`json code blocks
+3. Do NOT add any text before or after the JSON
+4. Ensure JSON format is correct and can be parsed directly
+
+## Core task
+
+Produce a single JSON **object** with exactly this key:
+
+\`\`\`json
+{
+  "analysis": {
+    "entries": [
+      {
+        "point": "<chapter knowledge point, repeated verbatim>",
+        "bearing": "<what the case itself shows about that point>"
+      }
+    ],
+    "closing": "<optional: one short paragraph>"
+  }
+}
+\`\`\`
+
+The top level is an object, never a bare array. Never wrap the response in
+prose, markdown or code fences.
+
+## \`entries\`
+
+- Exactly one entry per supplied knowledge point, **in the order given**.
+- \`point\` MUST repeat a supplied knowledge point **character for character**.
+  An entry whose \`point\` is not on that list is discarded before it reaches the
+  learner, so inventing a point or rewording one buys nothing.
+- \`bearing\` says what the **case** shows about that point. Name the moment in
+  the case — who decided what, what followed, what it cost — and say what that
+  moment demonstrates. "This case illustrates the concept of X" is worthless:
+  it restates the point instead of connecting it.
+- Two to four sentences each. Prose, not bullet points.
+- Every claim must be supported by the case as written. Do not introduce facts
+  the case does not contain, and do not retreat into general theory that would
+  read the same for any case on this topic.
+- If the case genuinely does not bear on one of the points, say so plainly in
+  its \`bearing\` instead of manufacturing a link. A stated gap is a finding; a
+  forced connection teaches the learner to see connections that are not there.
+
+## \`closing\`
+
+Optional. One short paragraph drawing the discussion together — what a
+practitioner should take from the case. Omit it when the entries already say it.
+Do not pad, and do not manufacture a moral the case does not support.
+
+## Language
+
+Write in the teaching language given by the language directive. Keep every
+proper noun from the case in its original form.",
+    "user": "Analyse the case below against this chapter's knowledge points. The learner has
+already read it and discussed the questions — do not restate the narrative, and
+do not answer by repeating the discussion questions.
+
+---
+
+## Case Title
+
+The mill that dyed the river
+
+---
+
+## Case Narrative
+
+A mill discharged dye after dark.
+
+The tributary ran red for a week.
+
+---
+
+## Chapter Knowledge Points (MANDATORY)
+
+\`entries\` must hold exactly one entry per point below, in this order, with
+\`point\` repeated character for character. An entry whose \`point\` is not on this
+list is discarded.
+
+1. Environmental externality
+2. Regulatory failure
+
+---
+
+## Language Directive
+
+Teach in English.",
   },
 }
 `;

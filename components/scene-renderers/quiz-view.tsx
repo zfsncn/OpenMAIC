@@ -8,23 +8,28 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
+  RefreshCw,
   ChevronRight,
   Check,
   BookOpenText,
   Loader2,
   Sparkles,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('QuizView');
-import type { QuizQuestion } from '@/lib/types/stage';
+import type { QuizQuestion, SceneContent } from '@/lib/types/stage';
+import type { SceneOutline } from '@/lib/types/generation';
+import { useStageStore } from '@/lib/store/stage';
+import { fetchSceneContent } from '@/lib/hooks/use-scene-generator';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
-import { writeDraftRecovery } from '@/lib/quiz/persistence';
+import { clearAllForScene, writeDraftRecovery } from '@/lib/quiz/persistence';
 import {
   createQuizAttemptWriter,
   loadQuizAttemptState,
@@ -51,6 +56,26 @@ interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
   readonly stageId: string;
+}
+
+/**
+ * Pull the questions out of a `/api/generate/scene-content` payload.
+ *
+ * That route answers with the *generated* payload, not with an assembled scene:
+ * for a quiz outline it is `{ questions }` and carries **no `type`
+ * discriminant**. The discriminant is stamped later, when the scene itself is
+ * built (`buildCompleteScene` in `@openmaic/generation`). So the payload can
+ * only be recognised structurally — checking `content.type === 'quiz'` would
+ * reject every successful regeneration.
+ *
+ * A payload with no questions is rejected rather than written back: an empty
+ * generation must not replace the set the learner is currently looking at.
+ */
+function quizQuestionsFromGeneratedContent(content: unknown): QuizQuestion[] | null {
+  if (typeof content !== 'object' || content === null) return null;
+  const questions = (content as { questions?: unknown }).questions;
+  if (!Array.isArray(questions) || questions.length === 0) return null;
+  return questions as QuizQuestion[];
 }
 
 const QuizMathText = memo(function QuizMathText({
@@ -153,10 +178,15 @@ function QuizCover({
   questionCount,
   totalPoints,
   onStart,
+  onChangeSet,
+  changeSetBusy,
 }: {
   questionCount: number;
   totalPoints: number;
   onStart: () => void;
+  /** Shuffle a fresh set of questions. Present only for quiz classrooms. */
+  onChangeSet?: () => void;
+  changeSetBusy?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -219,12 +249,31 @@ function QuizCover({
         transition={{ delay: 0.3 }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
+        data-quiz-action="start"
         onClick={onStart}
         className="mt-1 px-8 py-2.5 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-full font-medium shadow-lg shadow-violet-200/50 dark:shadow-violet-900/50 hover:shadow-violet-300/50 transition-shadow z-10 flex items-center gap-2"
       >
         {t('quiz.startQuiz')}
         <ChevronRight className="w-4 h-4" />
       </motion.button>
+
+      {onChangeSet && (
+        <motion.button
+          initial={{ y: 10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.35 }}
+          whileHover={{ scale: changeSetBusy ? 1 : 1.04 }}
+          whileTap={{ scale: changeSetBusy ? 1 : 0.96 }}
+          type="button"
+          data-quiz-action="change-set"
+          onClick={onChangeSet}
+          disabled={changeSetBusy}
+          className="z-10 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-violet-50 hover:text-violet-600 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:bg-violet-900/30 dark:hover:text-violet-300"
+        >
+          <RefreshCw className={cn('w-3.5 h-3.5', changeSetBusy && 'animate-spin')} />
+          {t('quiz.changeSet')}
+        </motion.button>
+      )}
     </div>
   );
 }
@@ -702,6 +751,13 @@ function ScoreBanner({
 export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   const { t, locale } = useI18n();
 
+  // "Shuffle a fresh set" is offered only inside a unit-quiz classroom — an
+  // ordinary lesson's quiz scene keeps its single, authored set. The lesson
+  // kind rides on the stage document itself (zero-DDL JSONB field).
+  const stage = useStageStore.use.stage();
+  const canChangeSet = stage?.lessonKind === 'unitQuiz';
+  const [changingSet, setChangingSet] = useState(false);
+
   const [phase, setPhase] = useState<Phase>('not_started');
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [results, setResults] = useState<QuestionResult[]>([]);
@@ -871,6 +927,77 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     );
   }, [attemptId, retrying, runtimeWriter, sceneId, stageId, viewLifetime]);
 
+  /**
+   * Shuffle a fresh set for a quiz classroom: regenerate this scene's content
+   * from its persisted outline, bumping the attempt counter so the prompt
+   * demands a set that does not repeat an earlier one. The new content is
+   * written back through the stage store so it survives a refresh, then a clean
+   * attempt is opened so no stale answer survives the swap.
+   */
+  const handleChangeSet = useCallback(async () => {
+    if (changingSet) return;
+    const state = useStageStore.getState();
+    const currentStage = state.stage;
+    if (!currentStage || currentStage.lessonKind !== 'unitQuiz') return;
+
+    const baseOutline =
+      state.outlines.find((outline) => outline.type === 'quiz') ?? state.outlines[0];
+    if (!baseOutline?.quizConfig) {
+      log.warn('Cannot change quiz set: no quiz outline with a config is persisted for this stage');
+      return;
+    }
+
+    setChangingSet(true);
+    try {
+      const nextOutline: SceneOutline = {
+        ...baseOutline,
+        quizConfig: {
+          ...baseOutline.quizConfig,
+          attempt: (baseOutline.quizConfig.attempt ?? 0) + 1,
+        },
+      };
+      const result = await fetchSceneContent({
+        outline: nextOutline,
+        allOutlines: [nextOutline],
+        stageId,
+        stageInfo: {
+          name: currentStage.name,
+          ...(currentStage.description ? { description: currentStage.description } : {}),
+          ...(currentStage.style ? { style: currentStage.style } : {}),
+        },
+        ...(currentStage.languageDirective
+          ? { languageDirective: currentStage.languageDirective }
+          : {}),
+      });
+      const questions = result.success ? quizQuestionsFromGeneratedContent(result.content) : null;
+      if (!questions) {
+        log.warn('Change-set regeneration returned no quiz content:', result.error);
+        toast.error(t('quiz.changeSetFailed'));
+        return;
+      }
+      // The generated payload has no `type` — the scene content does, and the
+      // scene union is discriminated by it. Stamp it exactly the way
+      // `buildCompleteScene` does before writing the scene back.
+      const content: SceneContent = { type: 'quiz', questions };
+
+      const store = useStageStore.getState();
+      store.updateScene(sceneId, { content });
+      store.setOutlines(
+        store.outlines.map((outline) => (outline.id === baseOutline.id ? nextOutline : outline)),
+      );
+      await store.saveToStorage();
+      // Retire this scene's legacy/draft quiz keys, then roll the runtime
+      // attempt so the learner starts the fresh set from a blank slate.
+      clearAllForScene(sceneId);
+      await handleRetry();
+    } catch (error) {
+      log.warn('Failed to change quiz set:', error);
+      toast.error(t('quiz.changeSetFailed'));
+    } finally {
+      setChangingSet(false);
+    }
+  }, [changingSet, handleRetry, sceneId, stageId, t]);
+
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
 
   const resultMap = useMemo(() => {
@@ -919,6 +1046,8 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
               questionCount={questions.length}
               totalPoints={totalPoints}
               onStart={() => setPhase('answering')}
+              {...(canChangeSet ? { onChangeSet: () => void handleChangeSet() } : {})}
+              changeSetBusy={changingSet}
             />
           </motion.div>
         )}
@@ -1055,15 +1184,29 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                   {t('quiz.quizReport')}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleRetry()}
-                disabled={retrying}
-                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                {t('quiz.retry')}
-              </button>
+              <div className="flex items-center gap-4">
+                {canChangeSet && (
+                  <button
+                    type="button"
+                    data-quiz-action="change-set"
+                    onClick={() => void handleChangeSet()}
+                    disabled={changingSet}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn('w-3.5 h-3.5', changingSet && 'animate-spin')} />
+                    {t('quiz.changeSet')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleRetry()}
+                  disabled={retrying}
+                  className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  {t('quiz.retry')}
+                </button>
+              </div>
             </div>
 
             {/* Results */}

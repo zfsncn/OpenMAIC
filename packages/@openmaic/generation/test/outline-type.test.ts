@@ -44,6 +44,35 @@ describe('changeOutlineType', () => {
     });
   });
 
+  it('seeds a default caseConfig when switching to case', () => {
+    const r = changeOutlineType(base, 'case');
+    expect(r.type).toBe('case');
+    expect(r.caseConfig).toEqual({ questionCount: 3 });
+    // The chapter knowledge points ride along untouched: the case studies the
+    // same points the slide taught, which is what the whole chain hangs off.
+    expect(r.keyPoints).toEqual(['light', 'water', 'CO2']);
+  });
+
+  it('keeps an existing caseConfig across a switch into case', () => {
+    const r = changeOutlineType(
+      {
+        ...base,
+        type: 'interactive',
+        widgetType: 'simulation',
+        widgetOutline: { concept: 'X' },
+        caseConfig: { questionCount: 5, attempt: 1 },
+      },
+      'case',
+    );
+    expect(r.caseConfig).toEqual({ questionCount: 5, attempt: 1 });
+    // ...and the type it left behind does not linger.
+    expect(r.widgetType).toBeUndefined();
+  });
+
+  it('produces a case outline that survives applyOutlineFallbacks', () => {
+    expect(applyOutlineFallbacks(changeOutlineType(base, 'case'), true).type).toBe('case');
+  });
+
   it('keeps an existing valid pblConfig instead of overwriting', () => {
     const withPbl = changeOutlineType(
       {

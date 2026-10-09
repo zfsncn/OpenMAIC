@@ -274,6 +274,98 @@ function sanitizeNonTaskEngineOutline(outline: SceneOutline): SceneOutline {
   };
 }
 
+/**
+ * The question mix the unit-quiz path guarantees: five single-choice, five
+ * multiple-choice and one open discussion question.
+ */
+const UNIT_QUIZ_QUESTION_MIX = [
+  { type: 'single' as const, count: 5 },
+  { type: 'multiple' as const, count: 5 },
+  { type: 'text' as const, count: 1 },
+];
+
+const UNIT_QUIZ_QUESTION_COUNT = UNIT_QUIZ_QUESTION_MIX.reduce(
+  (total, entry) => total + entry.count,
+  0,
+);
+
+/**
+ * How many options every choice question offers on the unit-quiz path: A-E.
+ * The prompt asks for five; this is the server's half of the same contract.
+ */
+const UNIT_QUIZ_OPTION_COUNT = 5;
+
+/**
+ * The server's half of the unit-quiz contract.
+ *
+ * The template asks for exactly one quiz scene carrying a 5 / 5 / 1 mix; this
+ * makes that true even when the model drifts. A slide where a quiz belongs, a
+ * different total, or a mix that silently drops a type would otherwise reach
+ * the classroom unchanged — and the classroom is the thing the user sees.
+ */
+function enforceUnitQuizOutline(outline: SceneOutline): SceneOutline {
+  return {
+    ...outline,
+    type: 'quiz',
+    order: 1,
+    quizConfig: {
+      difficulty: outline.quizConfig?.difficulty ?? 'medium',
+      questionCount: UNIT_QUIZ_QUESTION_COUNT,
+      questionTypes: ['single', 'multiple', 'text'],
+      questionMix: UNIT_QUIZ_QUESTION_MIX.map((entry) => ({ ...entry })),
+      optionCount: UNIT_QUIZ_OPTION_COUNT,
+    },
+  };
+}
+
+/**
+ * Discussion questions the case-teaching path guarantees. Mirrors
+ * `DEFAULT_CASE_QUESTION_COUNT` in the generation package, which is what the
+ * content prompt falls back to — the count is stated here so the outline the
+ * user reviews matches the case they get.
+ */
+const CASE_TEACHING_QUESTION_COUNT = 3;
+
+/**
+ * How many knowledge points a case may carry. The content step receives this
+ * list *instead of* the chapter, so an over-long list is not "more thorough" —
+ * it is a case instructed to cover more than one event can show.
+ */
+const CASE_TEACHING_MAX_KEY_POINTS = 6;
+
+/**
+ * Force one case scene's outline into the shape the case-teaching path
+ * promises.
+ *
+ * The knowledge points are the load-bearing field: they are the chapter's whole
+ * contribution to the content step, and the list the analysis is written
+ * against. Normalising them here (trimmed, deduplicated, capped) keeps a model
+ * that repeats a point or pads the list from spending slots the case then has
+ * to cover.
+ *
+ * `caseConfig.attempt` is preserved rather than reset: the outline stream only
+ * ever sees the first generation, but the field is written by the "different
+ * case" action and must survive a re-run.
+ */
+function enforceCaseTeachingOutline(outline: SceneOutline): SceneOutline {
+  const keyPoints = Array.from(
+    new Set(
+      (outline.keyPoints ?? []).map((point) => point.trim()).filter((point) => point.length > 0),
+    ),
+  ).slice(0, CASE_TEACHING_MAX_KEY_POINTS);
+
+  return {
+    ...outline,
+    type: 'case',
+    order: 1,
+    keyPoints,
+    caseConfig: {
+      ...(outline.caseConfig ?? {}),
+      questionCount: CASE_TEACHING_QUESTION_COUNT,
+    },
+  };
+}
+
 function ensureUniqueOutlineId(outline: SceneOutline, usedIds: Set<string>): SceneOutline {
   const candidate = typeof outline.id === 'string' && outline.id.trim() ? outline.id : undefined;
   if (candidate && !usedIds.has(candidate)) {
@@ -419,23 +511,48 @@ export async function POST(req: NextRequest) {
     // Check if Interactive Mode or server-enabled Task Engine mode is enabled.
     const interactiveMode = requirements.interactiveMode ?? false;
     const taskEngineMode = resolveVocationalActive(requirements);
+    // The quiz path is a third branch, and a whole-route one: it asks for a
+    // single quiz scene and nothing else, which neither the standard template
+    // nor the two app-only ones express. It also ignores the two mode flags — a
+    // unit quiz is never interactive-first and never vocational.
+    const lessonKind = requirements.lessonKind ?? 'lesson';
     // Standard outline generation is byte-identical to the package path. The
     // two app-only modes retain their own templates but share the same inputs.
     // The standard branch receives the N3 RESOLVED slice (unresolvable vision
     // images removed, mapping naming only resolved ids) so its placeholder
     // text never promises an image this route will not attach.
-    let prompts: { system: string; user: string } | null = buildOutlinePrompt(requirements, {
-      pdfText,
-      pdfImages: resolvedPdfImages ?? pdfImages,
-      visionEnabled: hasVision,
-      imageMapping: resolvedImageMapping ?? imageMapping,
-      imageGenerationEnabled,
-      videoGenerationEnabled,
-      researchContext,
-      teacherContext,
-    });
+    let prompts: { system: string; user: string } | null =
+      lessonKind === 'unitQuiz'
+        ? buildPrompt(PROMPT_IDS.UNIT_QUIZ_OUTLINES, {
+            requirement: requirements.requirement,
+            pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
+            availableImages: availableImagesText,
+            researchContext: researchContext || 'None',
+            userProfile: userProfileText,
+          })
+        : lessonKind === 'caseTeaching'
+          ? buildPrompt(PROMPT_IDS.CASE_TEACHING_OUTLINES, {
+              requirement: requirements.requirement,
+              pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
+              researchContext: researchContext || 'None',
+              userProfile: userProfileText,
+            })
+          : buildOutlinePrompt(requirements, {
+              pdfText,
+              pdfImages: resolvedPdfImages ?? pdfImages,
+              visionEnabled: hasVision,
+              imageMapping: resolvedImageMapping ?? imageMapping,
+              imageGenerationEnabled,
+              videoGenerationEnabled,
+              researchContext,
+              teacherContext,
+            });
 
-    if (taskEngineMode || interactiveMode) {
+    if (
+      lessonKind !== 'unitQuiz' &&
+      lessonKind !== 'caseTeaching' &&
+      (taskEngineMode || interactiveMode)
+    ) {
       const promptId = taskEngineMode
         ? PROMPT_IDS.TASK_ENGINE_OUTLINES
         : PROMPT_IDS.INTERACTIVE_OUTLINES;
@@ -648,6 +765,18 @@ export async function POST(req: NextRequest) {
                 );
                 scanFrom = nextScanFrom;
                 for (const outline of newOutlines) {
+                  // The single-scene paths are defined to produce exactly one
+                  // scene. The templates ask for one; this is the server-side
+                  // half of that contract, so a model that ignores the
+                  // instruction cannot turn one case (or one quiz) into a
+                  // multi-scene course.
+                  if (
+                    (lessonKind === 'unitQuiz' || lessonKind === 'caseTeaching') &&
+                    parsedOutlines.length >= 1
+                  ) {
+                    break;
+                  }
+
                   // Ensure ID and order
                   const enrichedBase = {
                     ...outline,
@@ -656,7 +785,13 @@ export async function POST(req: NextRequest) {
                   const normalized = taskEngineMode
                     ? normalizeTaskEngineOutline(enrichedBase, requirements.requirement)
                     : sanitizeNonTaskEngineOutline(enrichedBase);
-                  const enriched = ensureUniqueOutlineId(normalized, usedOutlineIds);
+                  const shaped =
+                    lessonKind === 'unitQuiz'
+                      ? enforceUnitQuizOutline(normalized)
+                      : lessonKind === 'caseTeaching'
+                        ? enforceCaseTeachingOutline(normalized)
+                        : normalized;
+                  const enriched = ensureUniqueOutlineId(shaped, usedOutlineIds);
                   parsedOutlines.push(enriched);
 
                   const event = JSON.stringify({

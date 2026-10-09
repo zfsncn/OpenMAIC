@@ -69,7 +69,7 @@ export interface MediaGenerationRequest {
 /** A generation-ready description of one course scene. */
 export interface SceneOutline {
   id: string;
-  type: 'slide' | 'quiz' | 'interactive' | 'pbl';
+  type: 'slide' | 'quiz' | 'interactive' | 'pbl' | 'case';
   title: string;
   description: string;
   keyPoints: string[];
@@ -83,6 +83,44 @@ export interface SceneOutline {
     questionCount: number;
     difficulty: 'easy' | 'medium' | 'hard';
     questionTypes: ('single' | 'multiple' | 'text')[];
+    /**
+     * Explicit per-type quotas, used by the quiz-classroom path. `questionCount`
+     * still states the total and stays what the ordinary path reads; a count
+     * plus a type *set* cannot express "5 single, 5 multiple, 1 discussion",
+     * which is exactly what the unit-quiz flow requires.
+     */
+    questionMix?: Array<{ type: 'single' | 'multiple' | 'text'; count: number }>;
+    /**
+     * How many options every choice question must offer. Absent leaves the
+     * count to the model — the ordinary path, which has always varied between
+     * four and five. The unit-quiz path sets it so the prompt and the
+     * server-side contract agree on a fixed set of distractors.
+     */
+    optionCount?: number;
+    /**
+     * 1-based regeneration counter for the "shuffle a fresh set" action on a
+     * quiz classroom. Absent on the first generation; each regeneration bumps
+     * it so the prompt can say this is a later attempt and demand a set that
+     * does not repeat an earlier one.
+     */
+    attempt?: number;
+  };
+  /**
+   * Case-teaching config. The chapter knowledge points themselves are NOT
+   * duplicated here — they ride on the outline's first-class `keyPoints`,
+   * which every outline already persists. Keeping one list means the narrative,
+   * the discussion questions and the later analysis cannot drift apart by
+   * reading two copies that were written at different times.
+   */
+  caseConfig?: {
+    /** How many discussion questions the case should pose. */
+    questionCount?: number;
+    /**
+     * 1-based counter for "show a different case". Absent on the first one;
+     * each regeneration bumps it so the prompt can demand an event that is not
+     * the one the learner just read.
+     */
+    attempt?: number;
   };
   /**
    * @deprecated Use widgetType + widgetOutline instead

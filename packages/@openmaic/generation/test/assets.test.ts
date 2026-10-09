@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { loadSnippet } from '@openmaic/generation';
@@ -22,6 +22,8 @@ const PROMPT_IDS = [
   'game-content',
   'visualization3d-content',
   'procedural-skill-content',
+  'case-content',
+  'case-analysis',
   'slide-actions',
   'quiz-actions',
   'interactive-actions',
@@ -73,7 +75,10 @@ describe('packaged prompt assets', () => {
       ...listFiles(join(PACKAGE_ROOT, 'templates')),
       ...listFiles(join(PACKAGE_ROOT, 'snippets')),
     ]
-      .map((file) => relative(PACKAGE_ROOT, file))
+      // `relative` is separator-flavoured per platform, so normalise to the
+      // POSIX form the expectation is written in. Without this the invariant
+      // silently only holds on Linux.
+      .map((file) => relative(PACKAGE_ROOT, file).split(sep).join('/'))
       .sort();
 
     expect(actualFiles).toEqual(expectedFiles);

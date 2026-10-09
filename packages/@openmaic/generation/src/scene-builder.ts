@@ -3,6 +3,7 @@ import type { Action, Slide, SlideTheme } from '@openmaic/dsl';
 import type { SceneOutline } from './outline-types.js';
 import type {
   CompleteScene,
+  GeneratedCaseContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
   GeneratedQuizContent,
@@ -25,7 +26,8 @@ export function buildCompleteScene(
     | GeneratedSlideContent
     | GeneratedQuizContent
     | GeneratedInteractiveContent
-    | GeneratedPBLContent,
+    | GeneratedPBLContent
+    | GeneratedCaseContent,
   actions: Action[],
   stageId: string,
   options: BuildCompleteSceneOptions = {},
@@ -106,6 +108,39 @@ export function buildCompleteScene(
       title: outline.title,
       order: outline.order,
       content: { type: 'pbl', projectV2: content.projectV2 },
+      actions,
+      ...timestamps,
+    };
+  }
+
+  // The case payload is keyed off the outline's own type rather than a
+  // `'x' in content` probe, because every one of its fields is optional on the
+  // wire — the analysis pass returns only `analysis`, and a half-parsed first
+  // pass is possible. So it is validated field-by-field instead: without a
+  // title and a narrative there is no case, and an empty one must never be
+  // assembled into a scene that renders as a blank page.
+  if (outline.type === 'case') {
+    const caseContent = content as GeneratedCaseContent;
+    if (!caseContent.caseTitle || !caseContent.narrative) return null;
+    return {
+      id: sceneId,
+      outlineId: outline.id,
+      stageId,
+      type: 'case',
+      title: outline.title,
+      order: outline.order,
+      content: {
+        type: 'case',
+        caseTitle: caseContent.caseTitle,
+        ...(caseContent.summary ? { summary: caseContent.summary } : {}),
+        knowledgePoints: caseContent.knowledgePoints ?? [],
+        narrative: caseContent.narrative,
+        discussionQuestions: caseContent.discussionQuestions ?? [],
+        ...(caseContent.sources && caseContent.sources.length > 0
+          ? { sources: caseContent.sources }
+          : {}),
+        ...(caseContent.analysis ? { analysis: caseContent.analysis } : {}),
+      },
       actions,
       ...timestamps,
     };

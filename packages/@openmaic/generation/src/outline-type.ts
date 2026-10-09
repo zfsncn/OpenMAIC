@@ -7,6 +7,12 @@ const DEFAULT_QUIZ_CONFIG = {
   difficulty: 'medium' as const,
   questionTypes: ['single' as const],
 };
+/**
+ * Discussion questions a case poses when the outline states no count. Small on
+ * purpose: a case is read and argued over, and a long question list turns the
+ * argument into a worksheet.
+ */
+export const DEFAULT_CASE_QUESTION_COUNT = 3;
 const MAX_TARGET_SKILLS = 6;
 
 /** Return a new outline valid by construction for the selected scene type. */
@@ -38,6 +44,16 @@ export function changeOutlineType(outline: SceneOutline, newType: SceneType): Sc
   switch (newType) {
     case 'quiz':
       return { ...baseOutline, quizConfig: outline.quizConfig ?? { ...DEFAULT_QUIZ_CONFIG } };
+
+    case 'case':
+      // The chapter knowledge points are already on `baseOutline.keyPoints`, so
+      // switching to a case keeps them and only supplies the case-specific
+      // knobs. A case converted from a slide therefore studies the same points
+      // the slide taught.
+      return {
+        ...baseOutline,
+        caseConfig: outline.caseConfig ?? { questionCount: DEFAULT_CASE_QUESTION_COUNT },
+      };
 
     case 'interactive': {
       if (outline.widgetType && outline.widgetOutline) {

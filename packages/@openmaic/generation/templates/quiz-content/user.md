@@ -2,6 +2,15 @@ Title: {{title}}
 Description: {{description}}
 Test Points: {{keyPoints}}
 Question Count: {{questionCount}}, Difficulty: {{difficulty}}, Question Types: {{questionTypes}}
+{{#if questionMix}}
+Question Mix (MANDATORY): exactly {{questionMix}} — these counts are fixed, do not redistribute them.
+{{/if}}
+{{#if optionCount}}
+Options Per Choice Question (MANDATORY): exactly {{optionCount}}, lettered A onward in order.
+{{/if}}
+{{#if attempt}}
+Regeneration Attempt {{attempt}} (MANDATORY): the learner has already seen one or more earlier sets of questions for this test point. Produce a COMPLETELY DIFFERENT set — new scenarios, new stems, new option content. Do not reuse, repeat, or lightly reword any question you generated before; keep only the same test points and the same counts.
+{{/if}}
 
 ## Language Directive
 {{languageDirective}}

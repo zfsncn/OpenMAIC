@@ -21,6 +21,7 @@ import type {
   GeneratedQuizContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
+  GeneratedCaseContent,
 } from '@/lib/types/generation';
 import type { SpeechAction } from '@/lib/types/action';
 import type { PBLContent } from '@/lib/types/stage';
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
         | GeneratedQuizContent
         | GeneratedInteractiveContent
         | GeneratedPBLContent
+        | GeneratedCaseContent
         | PBLContent;
       stageId: string;
       agents?: AgentInfo[];
@@ -158,7 +160,8 @@ export async function POST(req: NextRequest) {
       | GeneratedSlideContent
       | GeneratedQuizContent
       | GeneratedInteractiveContent
-      | GeneratedPBLContent;
+      | GeneratedPBLContent
+      | GeneratedCaseContent;
 
     const actions = await generateSceneActions(outline, generationContent, aiCall, {
       ctx,

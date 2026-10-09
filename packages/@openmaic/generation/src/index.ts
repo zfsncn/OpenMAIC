@@ -9,6 +9,7 @@ export type {
 export {
   extractInteractiveElements,
   extractWidgetConfig,
+  generateCaseAnalysis,
   generateSceneActions,
   generateSceneContent,
   generateWidgetContent,
@@ -16,6 +17,8 @@ export {
   resolveImageIds,
 } from './scene-generator.js';
 export type {
+  CaseAnalysisInput,
+  CaseAnalysisOptions,
   SceneActionsOptions,
   SceneContentFailure,
   SceneContentFailureCode,

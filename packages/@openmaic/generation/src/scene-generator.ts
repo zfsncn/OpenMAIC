@@ -9,6 +9,10 @@ import { nanoid } from 'nanoid';
 import katex from 'katex';
 import type {
   Action,
+  CaseAnalysis,
+  CaseAnalysisEntry,
+  CaseQuestion,
+  CaseSourceRef,
   PBLProject,
   PPTElement,
   QuizQuestion,
@@ -30,6 +34,7 @@ import type {
   WidgetOutline,
 } from './outline-types.js';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
+import { DEFAULT_CASE_QUESTION_COUNT } from './outline-type.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
@@ -42,6 +47,7 @@ import {
 import type { PromptId } from './prompts/types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
 import type {
+  GeneratedCaseContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
   GeneratedQuizContent,
@@ -73,7 +79,16 @@ const INTERACTIVE_WIDGET_ACTIONS = [
 
 // ── Options interfaces for scene generation functions ──
 
-export type SceneContentFailureCode = 'prompt-unavailable' | 'invalid-model-output';
+/**
+ * `missing-input` is the caller's fault rather than the model's: the request
+ * arrived without what the prompt needs to be built at all. Kept distinct from
+ * `prompt-unavailable` because the two want opposite responses — a missing
+ * prompt asset is a deployment fault, a missing input is a bad request.
+ */
+export type SceneContentFailureCode =
+  | 'prompt-unavailable'
+  | 'invalid-model-output'
+  | 'missing-input';
 
 export interface SceneContentFailure {
   code: SceneContentFailureCode;
@@ -115,6 +130,36 @@ export interface SceneContentOptions {
   baselineContent?: GeneratedSlideContent;
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  /**
+   * Case-only: the research material the case must be built from, already
+   * gathered by the caller and rendered to plain text.
+   *
+   * Web search lives in the app layer, not here — the package has no search
+   * backend of its own — so the caller runs the search and hands the result
+   * down. When absent, the case is written from the model's own knowledge
+   * about well-documented events; the prompt then requires it to say so rather
+   * than invent one.
+   */
+  caseContext?: string;
+  /**
+   * Case-only: the sources the research behind {@link caseContext} actually came
+   * from, in the order the caller gathered them.
+   *
+   * Two jobs, both about not trusting the model with a URL:
+   *
+   * 1. **Whitelist.** When set, the model's own `sources` is accepted only for
+   *    URLs that appear here. A case written from a search context can only
+   *    legitimately cite what that search returned, so an off-list URL is a
+   *    fabrication by definition — the model cannot have read it.
+   * 2. **Fallback.** When the model cites nothing, these are used as the case's
+   *    sources. The case genuinely *was* written from them, and a reader
+   *    deciding how far to trust it is better served by the material than by a
+   *    bare "no sources" line.
+   *
+   * Absent (no research was gathered), the model's `sources` is taken at face
+   * value and filtered only by {@link normalizeCaseSources}.
+   */
+  caseSources?: CaseSourceRef[];
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
@@ -234,6 +279,7 @@ export async function generateSceneContent(
   | GeneratedQuizContent
   | GeneratedInteractiveContent
   | GeneratedPBLContent
+  | GeneratedCaseContent
   | null
 > {
   const log = options.logger ?? noopGenerationLogger;
@@ -250,6 +296,8 @@ export async function generateSceneContent(
     allowProceduralSkill = false,
     editDirective,
     baselineContent,
+    caseContext,
+    caseSources,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -299,6 +347,16 @@ export async function generateSceneContent(
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
+    case 'case':
+      return generateCaseContent(
+        outline,
+        aiCall,
+        languageDirective,
+        caseContext,
+        caseSources,
+        log,
+        options.onFailure,
+      );
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -872,6 +930,17 @@ async function generateQuizContent(
     questionCount: quizConfig.questionCount,
     difficulty: quizConfig.difficulty,
     questionTypes: quizConfig.questionTypes.join(', '),
+    // The unit-quiz path states an exact per-type quota and an exact option
+    // count; the ordinary path leaves both unset and the template then says
+    // nothing about them. Rendered to plain text so the template stays a
+    // straight string splice.
+    questionMix: quizConfig.questionMix
+      ? quizConfig.questionMix.map((entry) => `${entry.count} ${entry.type}`).join(', ')
+      : '',
+    optionCount: quizConfig.optionCount ?? '',
+    // Present only when a quiz classroom shuffles a fresh set; the template's
+    // `{{#if attempt}}` block then demands a different set from any earlier one.
+    attempt: quizConfig.attempt ?? '',
     languageDirective: languageDirective || '',
   });
 
@@ -908,7 +977,7 @@ async function generateQuizContent(
     };
   });
 
-  const contractFailure = findQuizOptionsContractFailure(questions);
+  const contractFailure = findQuizOptionsContractFailure(questions, quizConfig.optionCount);
   if (contractFailure) {
     log.error(`Quiz option contract failed for "${outline.title}": ${contractFailure}`);
     onFailure?.({ code: 'invalid-model-output' });
@@ -916,6 +985,337 @@ async function generateQuizContent(
   }
 
   return { questions };
+}
+
+/**
+ * Normalize the model's `sources` into the renderable shape.
+ *
+ * A source without a usable URL is dropped rather than kept as a title-only
+ * entry: the whole value of a citation here is that a reader can open it and
+ * check the case. A dangling title would look like evidence while being
+ * unverifiable, which is worse than showing no sources at all.
+ */
+function normalizeCaseSources(sources: readonly unknown[]): CaseSourceRef[] {
+  const normalized: CaseSourceRef[] = [];
+  for (const entry of sources) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { title, url } = entry as { title?: unknown; url?: unknown };
+    if (typeof url !== 'string') continue;
+    const trimmedUrl = url.trim();
+    if (!/^https?:\/\//i.test(trimmedUrl)) continue;
+    const trimmedTitle = typeof title === 'string' ? title.trim() : '';
+    normalized.push({ title: trimmedTitle || trimmedUrl, url: trimmedUrl });
+  }
+  return normalized;
+}
+
+/**
+ * How many researched sources stand in when the model cites none. Small on
+ * purpose — these are "the material behind this case", not a bibliography.
+ */
+const MAX_CASE_FALLBACK_SOURCES = 5;
+
+/**
+ * The source list that actually ships with a case.
+ *
+ * The model is asked to copy its citations out of the search context verbatim,
+ * but instruction-following is not a guarantee — so when the caller tells us
+ * which URLs the research actually returned, that list becomes a whitelist. A
+ * URL outside it is a fabrication by construction: the model cannot have read a
+ * page that was never fetched. `normalizeCaseSources` still runs first, so the
+ * URL shape is validated in one place for both the whitelisted and the
+ * unrestricted path.
+ *
+ * The fallback is what stops a researched case from claiming to be unsourced.
+ * When the model cites nothing at all, the material it was written from is
+ * still the honest answer to "where did this come from?", and it is strictly
+ * more useful to a reader than the no-sources notice — which reads as "this was
+ * written from memory" and would be false here. `researched` is only non-empty
+ * when a search actually succeeded, so the notice keeps its original meaning on
+ * the paths where it is still correct.
+ */
+function selectCaseSources(
+  modelSources: readonly unknown[] | undefined,
+  researched: readonly CaseSourceRef[] | undefined,
+): CaseSourceRef[] {
+  const allowed = researched && researched.length > 0 ? researched : undefined;
+  const normalized = Array.isArray(modelSources) ? normalizeCaseSources(modelSources) : [];
+
+  if (!allowed) return normalized;
+
+  const allowedUrls = new Set(allowed.map((source) => source.url));
+  const cited = normalized.filter((source) => allowedUrls.has(source.url));
+
+  // Cap the fallback: the caller's list covers every knowledge point searched,
+  // and a case does not cite twenty pages. A long list would read as padding.
+  return cited.length > 0 ? cited : allowed.slice(0, MAX_CASE_FALLBACK_SOURCES);
+}
+
+/**
+ * Generate a real-world case study and its discussion questions from an
+ * outline, plus (on the second pass) the analysis that binds the case back to
+ * the chapter's knowledge points.
+ *
+ * Returns null on any failure rather than a partially-populated payload: a case
+ * without a narrative, or without questions, is not a case, and a caller cannot
+ * do anything useful with half of one. Empty `knowledgePoints` is the one
+ * tolerated shortfall — see the prompt's honesty rule — because the alternative
+ * is discarding a case that is otherwise sound.
+ *
+ * The chapter text is deliberately NOT an input. By the time content is
+ * generated the chapter has already been distilled into `outline.keyPoints`,
+ * which is what every other content kind here reads; passing the raw text again
+ * would let the case drift to parts of the chapter the outline did not select.
+ */
+async function generateCaseContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  caseContext?: string,
+  caseSources?: readonly CaseSourceRef[],
+  log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
+): Promise<GeneratedCaseContent | null> {
+  const questionCount = outline.caseConfig?.questionCount ?? DEFAULT_CASE_QUESTION_COUNT;
+
+  const prompts = buildPrompt(PROMPT_IDS.CASE_CONTENT, {
+    // The outline's own words are the only statement of intent the content step
+    // has: the case path, like the quiz path, runs without a composer.
+    requirement: outline.teachingObjective || outline.description,
+    keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
+    questionCount,
+    // Present only when the caller gathered research material; the template then
+    // pins the case to that event. Absent, it tells the model to draw on
+    // well-documented events instead of inventing one.
+    caseContext: caseContext ?? '',
+    // The researched URLs, spelled out as a list the model can copy from. The
+    // URLs are already inside `caseContext` (formatted as markdown links by the
+    // caller), but a bare list is what makes "copy one of these verbatim"
+    // followable — and copying is the whole point, since `selectCaseSources`
+    // rejects anything that is not on it.
+    caseSourceList: (caseSources ?? [])
+      .map((source, index) => `${index + 1}. ${source.title} — ${source.url}`)
+      .join('\n'),
+    // Present only when the learner asked for a different case.
+    attempt: outline.caseConfig?.attempt ?? '',
+    languageDirective: languageDirective || '',
+  });
+
+  if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
+    return null;
+  }
+
+  log.debug(`Generating case content for: ${outline.title}`);
+  const response = await aiCall(prompts.system, prompts.user);
+  const generated = parseJsonResponse<GeneratedCaseContent>(response);
+
+  if (!generated || typeof generated !== 'object' || Array.isArray(generated)) {
+    log.error(`Failed to parse AI response for: ${outline.title}`);
+    onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+
+  const caseTitle = typeof generated.caseTitle === 'string' ? generated.caseTitle.trim() : '';
+  const summary = typeof generated.summary === 'string' ? generated.summary.trim() : '';
+  const narrative = typeof generated.narrative === 'string' ? generated.narrative.trim() : '';
+  const knowledgePoints = Array.isArray(generated.knowledgePoints)
+    ? generated.knowledgePoints
+        .filter((point): point is string => typeof point === 'string' && point.trim().length > 0)
+        // These strings are echoed verbatim as search queries and as the labels a
+        // discussion question is anchored to, so padding would leak into the UI.
+        .map((point) => point.trim())
+    : [];
+
+  const discussionQuestions: CaseQuestion[] = Array.isArray(generated.discussionQuestions)
+    ? generated.discussionQuestions
+        .filter(
+          (question): question is CaseQuestion =>
+            !!question &&
+            typeof question.question === 'string' &&
+            question.question.trim().length > 0,
+        )
+        .map((question, index) => {
+          const point = typeof question.point === 'string' ? question.point.trim() : '';
+          return {
+            id:
+              typeof question.id === 'string' && question.id.trim()
+                ? question.id.trim()
+                : `cq_${index + 1}`,
+            question: question.question.trim(),
+            ...(point ? { point } : {}),
+          };
+        })
+    : [];
+
+  if (!caseTitle || !narrative || discussionQuestions.length === 0) {
+    log.error(
+      `Case payload incomplete for "${outline.title}": title=${caseTitle ? 'yes' : 'no'}, narrative=${narrative.length}, questions=${discussionQuestions.length}`,
+    );
+    onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+
+  const sources = selectCaseSources(generated.sources, caseSources);
+
+  log.debug(
+    `Got case "${caseTitle}" for: ${outline.title} (${discussionQuestions.length} question(s), ${sources.length} source(s))`,
+  );
+
+  return {
+    caseTitle,
+    ...(summary ? { summary } : {}),
+    knowledgePoints,
+    narrative,
+    discussionQuestions,
+    ...(sources.length > 0 ? { sources } : {}),
+  };
+}
+
+/** What {@link generateCaseAnalysis} analyses: the case as the learner met it. */
+export interface CaseAnalysisInput {
+  caseTitle: string;
+  narrative: string;
+  /** The chapter's knowledge points — the list the analysis must bind to. */
+  knowledgePoints: readonly string[];
+}
+
+export interface CaseAnalysisOptions {
+  languageDirective?: string;
+  onFailure?: (failure: SceneContentFailure) => void;
+}
+
+/**
+ * Matching key for a knowledge point: whitespace-collapsed and case-folded.
+ *
+ * A model routinely re-cases or re-spaces a Latin point it was handed, and
+ * discarding an otherwise-sound entry over that would be pedantry. The *emitted*
+ * string is always the caller's own wording (see `normalizeCaseAnalysis`), so
+ * the heading the learner reads matches the tag above it exactly.
+ */
+function caseAnalysisKey(point: string): string {
+  return point.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Normalize the model's analysis into the renderable shape.
+ *
+ * Tolerates the bare object a model sometimes returns instead of the
+ * `{ analysis: {...} }` envelope the prompt asks for: the envelope is not what
+ * keeps the output honest, the knowledge-point check below is.
+ *
+ * An entry naming a point the chapter does not have is **dropped**, not
+ * rendered — the analysis exists to bind the case back to points the reader was
+ * given, and a point the chapter never had is a fabricated connection wearing
+ * the chapter's clothes. When every entry is dropped the result is null, so the
+ * caller reports a failure instead of rendering an empty analysis over a case.
+ */
+function normalizeCaseAnalysis(
+  value: unknown,
+  knowledgePoints: readonly string[],
+): CaseAnalysis | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const wrapper = value as { analysis?: unknown };
+  const raw = wrapper.analysis ?? value;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const rawEntries = (raw as { entries?: unknown }).entries;
+  if (!Array.isArray(rawEntries)) return null;
+
+  const canonical = new Map<string, string>();
+  for (const point of knowledgePoints) {
+    canonical.set(caseAnalysisKey(point), point);
+  }
+
+  // Collect by point first, then emit in the chapter's own order: the model is
+  // asked for that order, but a reordered reply is a formatting slip, not a
+  // content failure, and re-sorting it keeps the headings aligned with the
+  // knowledge-point tags the learner saw above.
+  const bearings = new Map<string, string>();
+  for (const entry of rawEntries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { point, bearing } = entry as { point?: unknown; bearing?: unknown };
+    if (typeof point !== 'string' || typeof bearing !== 'string') continue;
+    const key = caseAnalysisKey(point);
+    if (!canonical.has(key) || bearings.has(key)) continue;
+    const trimmedBearing = bearing.trim();
+    if (!trimmedBearing) continue;
+    bearings.set(key, trimmedBearing);
+  }
+
+  const entries: CaseAnalysisEntry[] = [];
+  for (const point of knowledgePoints) {
+    const bearing = bearings.get(caseAnalysisKey(point));
+    if (bearing) entries.push({ point, bearing });
+  }
+
+  if (entries.length === 0) return null;
+
+  const rawClosing = (raw as { closing?: unknown }).closing;
+  const closing = typeof rawClosing === 'string' ? rawClosing.trim() : '';
+
+  return { entries, ...(closing ? { closing } : {}) };
+}
+
+/**
+ * Write the analysis that binds a case back to the chapter's knowledge points.
+ *
+ * A separate call from {@link generateCaseContent} on purpose: the learner reads
+ * the case, discusses it, and only then meets the analysis, so it is written
+ * when they ask for it rather than when the case is. Folding it into the content
+ * pass would ship the answers on the same page as the questions.
+ *
+ * The input is the case as rendered — title, narrative, knowledge points — and
+ * not the outline: the analysis has to explain *this* case, and re-deriving it
+ * from the outline would let the two drift apart.
+ */
+export async function generateCaseAnalysis(
+  input: CaseAnalysisInput,
+  aiCall: AICallFn,
+  options: CaseAnalysisOptions = {},
+  log: GenerationLogger = noopGenerationLogger,
+): Promise<CaseAnalysis | null> {
+  const points = input.knowledgePoints
+    .map((point) => point.replace(/\s+/g, ' ').trim())
+    .filter((point) => point.length > 0);
+
+  // No anchor, no analysis: the contract is "one entry per chapter point, in the
+  // chapter's own words". With no points there is nothing to bind to and nothing
+  // to check the model against, so this is a bad request, not a model failure.
+  if (points.length === 0) {
+    log.error(`Cannot analyse case "${input.caseTitle}": no knowledge points supplied`);
+    options.onFailure?.({ code: 'missing-input' });
+    return null;
+  }
+
+  const prompts = buildPrompt(PROMPT_IDS.CASE_ANALYSIS, {
+    caseTitle: input.caseTitle,
+    narrative: input.narrative,
+    keyPoints: points.map((point, index) => `${index + 1}. ${point}`).join('\n'),
+    languageDirective: options.languageDirective || '',
+  });
+
+  if (!prompts) {
+    options.onFailure?.({ code: 'prompt-unavailable' });
+    return null;
+  }
+
+  log.debug(`Generating case analysis for: ${input.caseTitle}`);
+  const response = await aiCall(prompts.system, prompts.user);
+  const generated = parseJsonResponse<unknown>(response);
+
+  const analysis = normalizeCaseAnalysis(generated, points);
+  if (!analysis) {
+    log.error(`Failed to parse case analysis for: ${input.caseTitle}`);
+    options.onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+
+  log.debug(
+    `Got case analysis for "${input.caseTitle}" (${analysis.entries.length}/${points.length} point(s))`,
+  );
+  return analysis;
 }
 
 const QUIZ_OPTION_VALUE = /^[A-Z]$/;
@@ -927,7 +1327,10 @@ const QUIZ_OPTION_VALUE = /^[A-Z]$/;
  * list whose `value`s are single ASCII letters A-Z, and every answer entry
  * must equal one of those values exactly. Short-answer questions are skipped.
  */
-export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[]): string | null {
+export function findQuizOptionsContractFailure(
+  questions: readonly QuizQuestion[],
+  requiredOptionCount?: number,
+): string | null {
   for (let index = 0; index < questions.length; index += 1) {
     const question = questions[index];
     if (!question || question.type === 'short_answer') continue;
@@ -936,6 +1339,13 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
     const options = question.options;
     if (!options || options.length === 0) {
       return `${where}: choice question has no options`;
+    }
+
+    // Only a path that states an option count is held to one: the ordinary quiz
+    // path has always let the model choose between four and five, and
+    // tightening that here would reject questions it produces today.
+    if (requiredOptionCount !== undefined && options.length !== requiredOptionCount) {
+      return `${where}: expected ${requiredOptionCount} options, got ${options.length}`;
     }
 
     for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
@@ -1708,7 +2118,8 @@ export async function generateSceneActions(
     | GeneratedSlideContent
     | GeneratedQuizContent
     | GeneratedInteractiveContent
-    | GeneratedPBLContent,
+    | GeneratedPBLContent
+    | GeneratedCaseContent,
   aiCall: AICallFn,
   options: SceneActionsOptions = {},
 ): Promise<Action[]> {
@@ -1854,7 +2265,34 @@ export async function generateSceneActions(
     return generateDefaultPBLActions(outline);
   }
 
+  // A case scene is read, not played. No action prompt is run for it: the case
+  // owns its own pacing (the learner scrolls and, later, asks for the
+  // analysis), so generating narration over it would fight the learner rather
+  // than drive anything. One default speech action still goes out so a lesson
+  // that auto-plays into a case does not land in silence.
+  if (outline.type === 'case') {
+    return generateDefaultCaseActions(outline);
+  }
+
   return [];
+}
+
+/**
+ * Generate default case Actions (fallback).
+ *
+ * Deliberately one line of framing and no more. The case text is the content;
+ * a narration that summarised it would pre-empt the discussion questions the
+ * scene exists to pose.
+ */
+function generateDefaultCaseActions(_outline: SceneOutline): Action[] {
+  return [
+    {
+      id: `action_${nanoid(8)}`,
+      type: 'speech',
+      title: '案例',
+      text: '我们先来读一个真实的案例，然后围绕本章的知识点讨论几个问题。',
+    },
+  ];
 }
 
 /**

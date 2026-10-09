@@ -36,6 +36,53 @@ export function widgetOutline(): SceneOutline {
   };
 }
 
+export function caseOutline(): SceneOutline {
+  return {
+    id: 'case-1',
+    type: 'case',
+    title: 'Externality: the dyeing-wastewater case',
+    description: 'Study a documented pollution incident through the externality lens.',
+    keyPoints: ['Environmental externality', 'Pigouvian tax', 'Regulatory failure'],
+    order: 5,
+    caseConfig: { questionCount: 3 },
+  };
+}
+
+/**
+ * A deliberately messy-but-recoverable model response: padding around the text
+ * fields, a blank knowledge point, a question with no stem, a question with no
+ * id, and four source shapes of which only two are openable.
+ */
+export function validCaseResponse(): string {
+  return JSON.stringify({
+    caseTitle: '  Dyeing wastewater discharged into a tributary  ',
+    summary: 'A textile mill released untreated dyeing wastewater after dark.',
+    knowledgePoints: [
+      'Environmental externality',
+      '   ',
+      '  Pigouvian tax  ',
+      'Regulatory failure',
+    ],
+    narrative:
+      'The mill opened its discharge valve after dark, and the tributary ran violet by morning.',
+    discussionQuestions: [
+      {
+        id: 'q_externality',
+        question: 'Who ends up paying for the damage, and who priced it in?',
+        point: 'Environmental externality',
+      },
+      { question: 'Why did the tax fail to bite?', point: 'Pigouvian tax' },
+      { id: 'q_blank', question: '   ', point: 'Regulatory failure' },
+    ],
+    sources: [
+      { title: ' Official investigation report ', url: ' https://example.gov.cn/report ' },
+      { title: 'Title with no URL at all' },
+      { title: 'Relative URL', url: 'example.com/not-absolute' },
+      { url: 'http://news.example.com/story' },
+    ],
+  });
+}
+
 export function pblOutline(): SceneOutline {
   return {
     id: 'pbl-1',

@@ -1,9 +1,13 @@
 /**
  * Scene Content Generation API
  *
- * Generates scene content (slides/quiz/interactive/pbl) from an outline.
+ * Generates scene content (slides/quiz/interactive/pbl/case) from an outline.
  * This is the first half of the two-step scene generation pipeline.
  * Does NOT generate actions — use /api/generate/scene-actions for that.
+ *
+ * `caseContext` / `caseSources` are optional case-only inputs: research the
+ * caller already gathered (web search lives in the app layer, not in the
+ * generator package). They are forwarded as-is; the package owns what they mean.
  */
 
 import { NextRequest } from 'next/server';
@@ -21,6 +25,7 @@ import type {
   ImageMapping,
   UserRequirements,
 } from '@/lib/types/generation';
+import type { CaseSourceRef } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -56,6 +61,41 @@ const VISION_RESOLUTION_BUDGET_MS = 15_000;
  */
 const MAX_CONSECUTIVE_UNRESOLVABLE_VISION_IMAGES = 3;
 
+/**
+ * Upper bound on the researched sources a client may hand down. The client
+ * searches once per knowledge point (at most six) and each search returns a
+ * handful of pages, so this is generous — it exists to bound the prompt and the
+ * whitelist, not to shape the research.
+ */
+const MAX_CASE_SOURCES = 20;
+
+/**
+ * Shape-check the client-supplied research sources, keeping the URLs usable by
+ * downstream code.
+ *
+ * These arrive from the browser, so they are untrusted input: only an
+ * `http(s)` URL survives (a source with no openable link is dropped rather than
+ * kept as a title, for the same reason `normalizeCaseSources` drops one), and
+ * the title falls back to the URL so every entry stays renderable. Duplicates
+ * are collapsed by URL because the same page legitimately comes back for more
+ * than one knowledge point.
+ */
+function sanitizeCaseSources(raw: unknown): CaseSourceRef[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const byUrl = new Map<string, CaseSourceRef>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { title, url } = entry as { title?: unknown; url?: unknown };
+    if (typeof url !== 'string') continue;
+    const trimmedUrl = url.trim();
+    if (!/^https?:\/\//i.test(trimmedUrl) || byUrl.has(trimmedUrl)) continue;
+    const trimmedTitle = typeof title === 'string' ? title.trim() : '';
+    byUrl.set(trimmedUrl, { title: trimmedTitle || trimmedUrl, url: trimmedUrl });
+    if (byUrl.size >= MAX_CASE_SOURCES) break;
+  }
+  return byUrl.size > 0 ? [...byUrl.values()] : undefined;
+}
+
 export async function POST(req: NextRequest) {
   let outlineTitle: string | undefined;
   let resolvedModelString: string | undefined;
@@ -71,6 +111,8 @@ export async function POST(req: NextRequest) {
       agents,
       languageDirective,
       requirements,
+      caseContext,
+      caseSources: rawCaseSources,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -85,6 +127,8 @@ export async function POST(req: NextRequest) {
       agents?: AgentInfo[];
       languageDirective?: string;
       requirements?: UserRequirements;
+      caseContext?: string;
+      caseSources?: unknown;
     };
 
     // Validate required fields
@@ -103,6 +147,21 @@ export async function POST(req: NextRequest) {
     }
 
     const outline: SceneOutline = { ...rawOutline };
+
+    // ── Case research material (case outlines only) ──
+    // Gathered by the client and passed through unchanged in spirit: the
+    // package decides what to do with it. `caseContext` is only forwarded when
+    // it is a non-blank string, so a caller sending `''` is the same as a
+    // caller sending nothing — which is what the prompt's "no search context"
+    // branch keys off.
+    const effectiveCaseContext =
+      typeof caseContext === 'string' && caseContext.trim() ? caseContext : undefined;
+    const effectiveCaseSources = sanitizeCaseSources(rawCaseSources);
+    if (outline.type === 'case') {
+      log.info(
+        `Case research received: context=${effectiveCaseContext ? `${effectiveCaseContext.length} chars` : 'none'}, sources=${effectiveCaseSources?.length ?? 0}`,
+      );
+    }
 
     // ── Model resolution from request headers/body ──
     // Route per scene-content type (e.g. `scene-content:quiz`); getStageModel
@@ -335,6 +394,8 @@ export async function POST(req: NextRequest) {
       targetLanguage: userLocale || undefined,
       userRequirements: requirements,
       allowProceduralSkill: vocationalActive,
+      ...(effectiveCaseContext ? { caseContext: effectiveCaseContext } : {}),
+      ...(effectiveCaseSources ? { caseSources: effectiveCaseSources } : {}),
       ...(effectiveOutline.type === 'pbl'
         ? {
             pblLoopFallback: (input) =>

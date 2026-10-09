@@ -7,6 +7,8 @@ export type PromptId =
   | 'requirements-to-outlines'
   | 'slide-content'
   | 'quiz-content'
+  | 'case-content'
+  | 'case-analysis'
   | 'simulation-content'
   | 'diagram-content'
   | 'code-content'
