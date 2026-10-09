@@ -1,8 +1,12 @@
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import type { PdfImage, SessionDocumentSource } from '@/lib/types/generation';
 
-export const MAX_DOCUMENT_BUNDLE_FILES = 5;
-export const MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES = 150 * 1024 * 1024;
+// Chapter uploads: one material per chapter, up to 15 chapters per course.
+// The total ceiling is sized to stay self-consistent with the per-file limit
+// (15 × MAX_COURSE_MATERIAL_SIZE_MB), so a full 15-chapter textbook is not
+// rejected by the aggregate guard before the count guard can allow it.
+export const MAX_DOCUMENT_BUNDLE_FILES = 15;
+export const MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES = 750 * 1024 * 1024;
 
 const BASE_BUDGET_PER_DOCUMENT = 1500;
 const RESERVED_BUDGET_RATIO = 0.4;

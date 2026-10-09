@@ -36,6 +36,20 @@ describe('embedded persistence route', () => {
     vi.doMock('@/lib/persistence/owner-materials', () => ({
       ensureOwnerMaterialSchema: vi.fn().mockResolvedValue(undefined),
     }));
+    // The other two schema steps below reach `splitSqlStatements` from
+    // `@openmaic/storage/document/pg`, which every test here replaces with a
+    // mock carrying only the store surface. Mocking the schema modules the way
+    // stage-meta and owner-materials already are keeps the bootstrap to the
+    // steps these tests actually exercise.
+    vi.doMock('@/lib/persistence/app-kv', () => ({
+      ensureAppKvSchema: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock('@/lib/persistence/material-extraction', () => ({
+      ensureMaterialExtractionSchema: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock('@/lib/persistence/material-image-blob', () => ({
+      ensureMaterialImageBlobSchema: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {

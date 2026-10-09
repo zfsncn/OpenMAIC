@@ -28,6 +28,7 @@ import {
   resetClaimParticipantsForTests,
 } from '@/lib/persistence/owner-claims';
 import { bindLegacyImport } from '@/lib/persistence/legacy-import-bindings';
+import { writeMaterialExtraction } from '@/lib/persistence/material-extraction';
 import { registerOwnerMaterial } from '@/lib/persistence/owner-materials';
 import {
   canonicalizeOwner,
@@ -200,6 +201,17 @@ export async function seedAnonymousWork(h: ClaimHarness, owner = ANON): Promise<
     { id: `mat-${owner}`, ownerId: owner, kind: 'source', bytes: 10, ossKey: `k-${owner}` },
     { maxCount: 10, maxTotalBytes: 1_000 },
   );
+  // One archived derivation: the extraction of this owner's material, keyed by
+  // the material's bytes and the extractor that ran.
+  await writeMaterialExtraction(h.pool as unknown as ConnectableQueryable, {
+    ownerId: owner,
+    contentDigest: `digest-${owner}`,
+    extractorId: 'alidocmind',
+    extractorVersion: '1',
+    byteSize: 10,
+    text: '# Seeded derivation',
+    images: [],
+  });
   const session = await h.sessions.createSession({ ownerId: owner, prompt: 'make a course' });
   const skill = await h.skills.create(owner, {
     name: 'my-notes',
@@ -253,6 +265,8 @@ export async function rowsUnder(pool: ClaimScenarioPool, owner: string) {
     runtime: await count('runtime_sessions WHERE learner_key = $1'),
     assets: await count('asset_entries WHERE principal = $1', assetPrincipalForOwner(owner).key),
     legacyImportBindings: await count('legacy_import_bindings WHERE owner_id = $1'),
+    appKv: await count('app_kv WHERE owner_id = $1'),
+    materialExtractions: await count('material_extraction WHERE owner_id = $1'),
     // The retired ownership column, where an installation still has it.
     legacyDocumentOwners: (await hasLegacyOwnerColumn(pool))
       ? await count('document_stages WHERE owner_id = $1')
@@ -287,6 +301,8 @@ const NOTHING = {
   runtime: 0,
   assets: 0,
   legacyImportBindings: 0,
+  appKv: 0,
+  materialExtractions: 0,
   legacyDocumentOwners: 0,
 };
 
@@ -332,6 +348,7 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
     sessions: 1,
     sessionEventCounters: 1,
     skills: 2,
+    materialExtractions: 1,
     legacyDocumentOwners: 2,
   });
 
@@ -349,6 +366,8 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
       runtime: 2,
       assets: 1,
       'legacy-import-bindings': 1,
+      'app-kv': 0,
+      'material-extraction': 1,
     },
   });
   expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);

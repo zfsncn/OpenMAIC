@@ -51,10 +51,6 @@ function pdfLayoutType(value: unknown): NonNullable<ParsedPdfContent['layout']>[
     : 'text';
 }
 
-function isMinerUMarkdownParser(parser: unknown): boolean {
-  return parser === 'mineru' || parser === 'mineru-cloud';
-}
-
 export function parsedPdfToDocumentArtifact(
   parsed: ParsedPdfContent,
   input: DocumentExtractorInput,
@@ -62,9 +58,11 @@ export function parsedPdfToDocumentArtifact(
   const blocks: DocumentBlock[] = [];
 
   if (parsed.text) {
+    // Every registered extractor (`unpdf`, `alidocmind`) emits a text block.
+    // The `markdown` block type is no longer produced by any PDF extractor.
     blocks.push({
       id: 'document-text',
-      type: isMinerUMarkdownParser(parsed.metadata?.parser) ? 'markdown' : 'text',
+      type: 'text',
       text: parsed.text,
     });
   }

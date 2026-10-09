@@ -146,38 +146,21 @@ for (const f of DOCUMENT_FORMATS) {
 
 // ─── Provider capability matrix ──────────────────────────────────────────────
 // Every provider's supported set of formats. This is the ONLY place these
-// lists live — `lib/document/extractors/pdf.ts` and `lib/pdf/mineru-cloud.ts`
-// import from here. Verified against mineru.net /file-urls/batch by probing
-// each format; self-host support tracks MinerU v3.1+ (no legacy .doc/.ppt/.xls).
+// lists live — `lib/document/extractors/pdf.ts` imports from here.
+//
+// NOTE: legacy OLE Office (.doc/.ppt/.xls) and the WebP/JP2 image formats are
+// still registered in DOCUMENT_FORMATS above, but no document extractor
+// supports them any more. Uploads of those types are rejected with an explicit
+// "unsupported format" error rather than silently failing.
 
 const M = DOCUMENT_MIME_TYPES;
-
-/** MinerU image formats — supported by both self-host (v3.1+) and cloud. */
-export const MINERU_IMAGE_MIMES: readonly string[] = [M.png, M.jpeg, M.webp, M.gif, M.bmp, M.jp2];
-
-/** MinerU self-host: modern Office + images. Legacy OLE is cloud-only. */
-export const MINERU_SELFHOST_MIMES: readonly string[] = [
-  M.pdf,
-  M.docx,
-  M.pptx,
-  M.xlsx,
-  ...MINERU_IMAGE_MIMES,
-];
-
-/** MinerU Cloud: everything self-host supports PLUS legacy Office (.doc/.ppt/.xls). */
-export const MINERU_CLOUD_MIMES: readonly string[] = [
-  ...MINERU_SELFHOST_MIMES,
-  M.doc,
-  M.ppt,
-  M.xls,
-];
 
 /** Local text extractor — no external dependency. */
 export const PLAIN_TEXT_MIMES: readonly string[] = [M.txt, M.markdown, 'text/x-markdown'];
 
 /**
  * AliDocMind (LLM version) image formats per the official contract:
- * JPG/JPEG/PNG/BMP/GIF. Note: no WebP or JP2 (unlike MinerU).
+ * JPG/JPEG/PNG/BMP/GIF. Note: no WebP or JP2.
  * https://help.aliyun.com/zh/document-mind/developer-reference/document-parsing-large-model-version
  */
 export const ALIDOCMIND_IMAGE_MIMES: readonly string[] = [M.png, M.jpeg, M.bmp, M.gif];
@@ -195,8 +178,6 @@ export const ALIDOCMIND_MIMES: readonly string[] = [
 
 export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
   unpdf: [M.pdf],
-  mineru: MINERU_SELFHOST_MIMES,
-  'mineru-cloud': MINERU_CLOUD_MIMES,
   alidocmind: ALIDOCMIND_MIMES,
   'plain-text': PLAIN_TEXT_MIMES,
 };

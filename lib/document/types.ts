@@ -29,12 +29,57 @@ export interface DocumentExtractorConfig {
   textOnly?: boolean;
 }
 
+/**
+ * What an extractor has learned about its own progress while it is still
+ * running.
+ *
+ * Deliberately partial: only a remote service that reports page-level progress
+ * can fill the counters, and one that only reports coarse stages fills nothing
+ * but `stage`. A caller must therefore render something useful for an empty
+ * progress object — "waiting" is a real state, not a missing one — which is why
+ * every field is optional instead of defaulting to zero (a fabricated `0/0`
+ * would read as "no work to do").
+ */
+export interface ExtractionProgress {
+  /** The remote service's own stage name, e.g. queued / running / converting. */
+  stage?: string;
+  /** Pages finished so far, when the service reports page-level progress. */
+  completedPages?: number;
+  /** Pages the job will process in total, when the service reports it. */
+  totalPages?: number;
+  /**
+   * How far along the service says it is, 0–100, when that is all it reports.
+   *
+   * Some services quantify their own progress as a percentage without ever
+   * exposing the unit that percentage counts. Multiplying it by a page estimate
+   * to manufacture a page counter would be a fabrication dressed as precision —
+   * the derived number would move in steps the service never took — so the
+   * percentage is carried as itself and the shape of the report stays honest
+   * about what is actually known.
+   */
+  percent?: number;
+}
+
 export interface DocumentExtractorInput {
   buffer: Buffer;
   fileName?: string;
   fileSize?: number;
   mimeType: string;
   config: DocumentExtractorConfig;
+  /**
+   * Called whenever the extractor learns something new about its own progress.
+   * Extractors that cannot observe progress simply never call it, and the
+   * callback must not be able to fail the extraction — a reporting channel
+   * that can break the work it reports on is worse than no channel.
+   */
+  onProgress?: (progress: ExtractionProgress) => void;
+  /**
+   * Resume the remote job this token names instead of submitting the document
+   * again (see `ExtractionFailureError.resumeToken`). Only the extractor that
+   * issued the token can honour it; every other extractor ignores it and runs
+   * a normal extraction.
+   */
+  resumeToken?: string;
 }
 
 export interface DocumentExtractorProvider {
