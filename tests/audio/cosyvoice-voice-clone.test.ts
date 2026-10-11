@@ -367,6 +367,36 @@ describe('CosyVoice voice cloning', () => {
     ).rejects.toMatchObject({ code: 'COSYVOICE_BOOTSTRAP_UNSUPPORTED' });
   });
 
+  it('carries the model across the field-name seam in registerVoice', async () => {
+    // Regression: VoiceRegistrationConfig names the model `model`; the
+    // enrollment layer expects `targetModel`. The poll step once passed the
+    // config through unmapped, so its optional targetModel arrived empty and
+    // queryCosyVoice failed its own config check — turning a SUCCESSFUL
+    // create_voice into a "missing required configuration" error (2026-10-11).
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ output: { voice_id: 'v-ok-1' } }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ output: { status: 'OK' } }), { status: 200 }),
+      );
+    const voiceId = await cosyVoiceRegistrationAdapter.registerVoice(
+      { baseUrl: BASE, apiKey: 'sk-cosy', model: COSYVOICE_TTS_VOICE_CLONE_MODEL },
+      {
+        voiceId: 'dou',
+        referenceAudioBase64: Buffer.from(mp3Bytes(256)).toString('base64'),
+        mimeType: 'audio/mp3',
+      },
+    );
+    expect(voiceId).toBe('v-ok-1');
+    // Two calls: create_voice then query_voice — the poll must NOT fail on its
+    // own config. Both bodies carry the enrollment model name.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const queryBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(queryBody.model).toBe('voice-enrollment');
+    expect(queryBody.input.action).toBe('query_voice');
+  });
+
   it('advertises the provider with only enrolled profile voices', () => {
     const providers = getEnabledProvidersWithVoices({
       'cosyvoice-tts': { apiKey: 'sk-cosy', baseUrl: '', enabled: true },

@@ -77,9 +77,22 @@ async function waitUntilReady(
   voiceId: string,
   signal?: AbortSignal,
 ): Promise<string> {
+  // The enrollment layer names its model `targetModel`; the registration
+  // config calls it `model`. Both fields are optional on their own types, so
+  // passing `cfg` straight through type-checked but arrived empty — the poll
+  // then failed its own config check and masked a SUCCESSFUL enrollment as
+  // "missing required configuration" (observed 2026-10-11: every attempt had
+  // in fact created the voice vendor-side before this line threw).
+  const queryCfg = {
+    apiKey: cfg.apiKey,
+    baseUrl: cfg.baseUrl,
+    targetModel: cfg.model || COSYVOICE_TTS_VOICE_CLONE_MODEL,
+    publicOnly: cfg.publicOnly,
+    managed: cfg.managed,
+  };
   for (let attempt = 0; attempt < READY_POLL_ATTEMPTS; attempt++) {
     if (signal?.aborted) throw signal.reason;
-    const status = await queryCosyVoice(cfg, voiceId, signal);
+    const status = await queryCosyVoice(queryCfg, voiceId, signal);
     if (status === 'OK') return voiceId;
     if (status === 'UNDEPLOYED') {
       throw new CosyVoiceError(
