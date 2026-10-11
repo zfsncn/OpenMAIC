@@ -187,7 +187,30 @@ export async function POST(req: NextRequest) {
       return apiError(error.code, error.httpStatus, error.message);
     }
     if (error instanceof QwenVoiceCloneError) {
-      return apiError(error.code, error.httpStatus || 502, qwenVoiceCloneErrorMessage(error));
+      // Log the provider's own words. This adapter used to answer with the
+      // generic ERROR_MESSAGES text alone, so an upstream rejection (unsupported
+      // model, no permission, unknown voice) was indistinguishable from any
+      // other — while other providers already log their raw vendor body.
+      // Wording stays vendor-neutral: the provider-neutrality guard forbids new
+      // vendor knowledge in this route, and `error.message` already carries the
+      // vendor code/message. Only the three identifiers hoisted above (provider
+      // / voice / audioId) are in scope in this catch.
+      log.error(
+        `TTS provider rejected the request [op=${error.operation ?? 'unknown'}`,
+        `code=${error.code}`,
+        `http=${error.httpStatus ?? '-'}`,
+        `vendorCode=${error.vendorCode ?? '-'}`,
+        `vendorMessage=${error.vendorMessage ?? '-'}`,
+        `provider=${ttsProviderId ?? 'unknown'}`,
+        `voice=${ttsVoice ?? 'unknown'}`,
+        `audioId=${audioId ?? 'unknown'}`,
+        `]: ${error.message}`,
+      );
+      return apiError(
+        error.code,
+        error.httpStatus || 502,
+        qwenVoiceCloneErrorMessage(error, error.operation),
+      );
     }
     if (error instanceof QwenTTSError) {
       return apiError(error.code, error.httpStatus, error.message);

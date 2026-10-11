@@ -138,8 +138,26 @@ describe('Qwen voice cloning', () => {
     expect(first).toBe(second);
     expect(first).toMatch(/^[a-z][a-z0-9_]{1,15}$/u);
     expect(first.length).toBeLessThanOrEqual(16);
-    expect(preferredVoiceName('!!!', pcmWav())).toMatch(/^v_[a-f0-9]{8}$/u);
+    // A punctuation-only name also folds to empty, so it takes the same stable
+    // `u<hash>` branch as a non-ASCII name (both are "no ASCII letters").
+    expect(preferredVoiceName('!!!', pcmWav())).toMatch(/^u[a-f0-9]{4}_[a-f0-9]{8}$/u);
     expect(preferredVoiceName('007 Agent', pcmWav())).toMatch(/^v007_[a-f0-9]{8}$/u);
+  });
+
+  it('keeps a fully non-ASCII name distinguishable instead of collapsing it to "v"', () => {
+    // Regression: `[^a-z0-9]+` folded `窦老师` to '', so every CJK voice name
+    // became the bare `v` prefix and was indistinguishable in the provider
+    // console. It now derives a stable `u<hash>` prefix from the original name.
+    const cjk = preferredVoiceName('窦老师', pcmWav());
+    expect(cjk).toMatch(/^u[a-f0-9]{4}_[a-f0-9]{8}$/u);
+    expect(cjk.length).toBeLessThanOrEqual(16);
+
+    // Stable for the same (name, audio) pair…
+    expect(preferredVoiceName('窦老师', pcmWav())).toBe(cjk);
+    // …and distinct across different names, so two CJK voices stay separable.
+    expect(preferredVoiceName('窦老师', pcmWav(1.5))).not.toBe(
+      preferredVoiceName('王老师', pcmWav()),
+    );
   });
 
   it.each([

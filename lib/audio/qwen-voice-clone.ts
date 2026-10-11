@@ -44,8 +44,23 @@ export class QwenVoiceCloneError extends Error {
     readonly code: QwenVoiceCloneErrorCode,
     readonly httpStatus?: number,
     readonly vendorCode?: string,
+    /**
+     * The provider's own human-readable rejection reason, captured from the
+     * response body's `message`/`Message` field. Kept separate from `vendorCode`
+     * because DashScope answers with both and only one of them is actionable
+     * (e.g. code=`InvalidParameter` + message=`model ... is not supported`).
+     *
+     * ⚠️ Previously this was captured and thrown away: the route answered with
+     * the generic ERROR_MESSAGES text alone, so an operator could not tell a
+     * permission failure from an unsupported model from a missing voice.
+     */
+    readonly vendorMessage?: string,
+    /** Which provider call failed; set by `postJson`, absent for local validation. */
+    readonly operation?: QwenVoiceCloneOperation,
   ) {
-    super(code);
+    // Compose the message with the provider's own words so every layer that logs
+    // `error.message` (route logs, toast bodies, container stdout) carries them.
+    super(vendorMessage ? `${code}: ${vendorMessage}` : code);
     this.name = 'QwenVoiceCloneError';
   }
 }
@@ -83,11 +98,23 @@ interface QwenResponse {
 const log = createLogger('QwenVoiceClone');
 let loggedSpeedNormalization = false;
 
+/**
+ * Which operation failed. Enrollment and synthesis share `postJson`, so
+ * `QWEN_VC_HTTP_ERROR` alone cannot say which request the provider rejected —
+ * the old single wording ("Qwen rejected the voice cloning request") was shown
+ * even when the user merely clicked Preview on an already-registered voice.
+ */
+export type QwenVoiceCloneOperation = 'enrollment' | 'synthesis';
+
+/**
+ * Wording per code AND operation. Only the codes whose text actually named the
+ * operation are split; the rest read identically either way.
+ */
 const ERROR_MESSAGES: Record<QwenVoiceCloneErrorCode, string> = {
   QWEN_VC_CONFIG_MISSING: 'Qwen voice cloning is missing required configuration.',
   QWEN_VC_ENDPOINT_INVALID: 'The configured Qwen endpoint is invalid.',
-  QWEN_VC_HTTP_ERROR: 'Qwen rejected the voice cloning request.',
-  QWEN_VC_TIMEOUT: 'The Qwen voice cloning request timed out.',
+  QWEN_VC_HTTP_ERROR: 'Qwen rejected the request.',
+  QWEN_VC_TIMEOUT: 'The Qwen request timed out.',
   QWEN_VC_TRANSPORT_ERROR: 'Could not reach the Qwen voice cloning service.',
   QWEN_VC_RESPONSE_JSON_INVALID: 'Qwen returned an invalid response.',
   QWEN_VC_RESPONSE_VOICE_MISSING: 'Qwen did not return a cloned voice ID.',
@@ -100,8 +127,32 @@ const ERROR_MESSAGES: Record<QwenVoiceCloneErrorCode, string> = {
   QWEN_VC_BOOTSTRAP_UNSUPPORTED: 'Qwen voice cloning requires reference audio and a transcript.',
 };
 
-export function qwenVoiceCloneErrorMessage(error: QwenVoiceCloneError): string {
-  return ERROR_MESSAGES[error.code];
+/** Operation-specific replacements for the codes whose old text was wrong. */
+const OPERATION_MESSAGES: Partial<
+  Record<QwenVoiceCloneErrorCode, Record<QwenVoiceCloneOperation, string>>
+> = {
+  QWEN_VC_HTTP_ERROR: {
+    enrollment: 'Qwen rejected the voice enrollment request.',
+    synthesis: 'Qwen rejected the speech synthesis request.',
+  },
+  QWEN_VC_TIMEOUT: {
+    enrollment: 'The Qwen voice enrollment request timed out.',
+    synthesis: 'The Qwen speech synthesis request timed out.',
+  },
+};
+
+/**
+ * The user-facing text, always suffixed with the provider's own code/message so
+ * a DashScope rejection is actionable instead of a generic refusal.
+ */
+export function qwenVoiceCloneErrorMessage(
+  error: QwenVoiceCloneError,
+  operation?: QwenVoiceCloneOperation,
+): string {
+  const base =
+    (operation && OPERATION_MESSAGES[error.code]?.[operation]) || ERROR_MESSAGES[error.code];
+  const vendor = error.vendorMessage || error.vendorCode;
+  return vendor ? `${base} (Qwen: ${vendor})` : base;
 }
 
 function isUnknownVoiceResponse(body: QwenResponse): boolean {
@@ -165,7 +216,22 @@ function endpoint(baseUrl: URL, path: string): URL {
   return normalized;
 }
 
+/**
+ * The provider-visible voice name: `<prefix>_<audioHash8>`, ASCII-only.
+ *
+ * DashScope derives the returned voice id from `preferred_name`, so the prefix
+ * is the only human-recognisable part of a cloned voice in the provider console.
+ *
+ * ⚠️ A fully non-ASCII name (e.g. `窦老师`) folds to an EMPTY string under the
+ * `[^a-z0-9]` rule, which previously collapsed every such voice to the bare
+ * prefix `v` — indistinguishable in the console except by hash. We now keep a
+ * short, deterministic `u<hash>` prefix derived from the ORIGINAL name, so
+ * different Chinese names stay distinguishable while remaining ASCII and
+ * stable for the same (name, audio) pair. The audio hash still guarantees two
+ * different clips never collide on one name.
+ */
 export function preferredVoiceName(name: string, audio: Uint8Array): string {
+  const digest = createHash('sha256').update(audio).digest('hex').slice(0, 8);
   let prefix = name
     .normalize('NFKD')
     .toLowerCase()
@@ -173,8 +239,15 @@ export function preferredVoiceName(name: string, audio: Uint8Array): string {
     .replace(/^_+|_+$/gu, '')
     .slice(0, 6);
   if (/^[0-9]/u.test(prefix)) prefix = `v${prefix.match(/^[0-9]+/u)?.[0] || ''}`.slice(0, 6);
-  else if (!/^[a-z]/u.test(prefix)) prefix = 'v';
-  const digest = createHash('sha256').update(audio).digest('hex').slice(0, 8);
+  else if (!/^[a-z]/u.test(prefix)) {
+    // Non-ASCII-only name: derive a stable prefix from it instead of collapsing
+    // to `v`. 4 hex chars keeps the whole id inside the 16-char budget.
+    const nameDigest = createHash('sha256')
+      .update(name.normalize('NFKC').trim())
+      .digest('hex')
+      .slice(0, 4);
+    prefix = `u${nameDigest}`;
+  }
   return `${prefix}_${digest}`.slice(0, 16);
 }
 
@@ -204,6 +277,8 @@ async function postJson(
   body: unknown,
   signal?: AbortSignal,
   target?: AudioEndpointTarget,
+  /** Labels every error raised here, so shared-failure wording stays truthful. */
+  operation?: QwenVoiceCloneOperation,
 ): Promise<QwenResponse> {
   const timeout = timeoutSignal(signal, REQUEST_TIMEOUT_MS);
   try {
@@ -243,10 +318,16 @@ async function postJson(
     }
     if (!response.ok) {
       const vendorCode = typeof parsed.code === 'string' ? parsed.code : undefined;
+      const vendorMessage =
+        typeof parsed.message === 'string' && parsed.message.trim()
+          ? parsed.message.trim()
+          : undefined;
       throw new QwenVoiceCloneError(
         isUnknownVoiceResponse(parsed) ? 'QWEN_VC_VOICE_NOT_FOUND' : 'QWEN_VC_HTTP_ERROR',
         response.status,
         vendorCode,
+        vendorMessage,
+        operation,
       );
     }
     return parsed;
@@ -276,6 +357,7 @@ export async function registerQwenVoice(
     },
     signal,
     resolved,
+    'enrollment',
   );
   const voiceId = typeof body.output?.voice === 'string' ? body.output.voice.trim() : '';
   if (!voiceId) throw new QwenVoiceCloneError('QWEN_VC_RESPONSE_VOICE_MISSING', 502);
@@ -297,6 +379,7 @@ export async function deleteQwenVoice(
     { model: QWEN_VOICE_ENROLLMENT_MODEL, input: { action: 'delete', voice } },
     signal,
     resolved,
+    'enrollment',
   );
 }
 
@@ -324,6 +407,7 @@ export async function qwenVoiceExists(
         },
         signal,
         resolved,
+        'enrollment',
       );
     } catch (error) {
       // A transient vendor failure (5xx or network error) makes the lookup
@@ -498,6 +582,7 @@ export async function synthesizeQwenVoiceClone(
       { model: resolved.targetModel, input: { text, voice } },
       deadline.signal,
       resolved,
+      'synthesis',
     );
     const rawAudioUrl =
       typeof body.output?.audio?.url === 'string' ? body.output.audio.url.trim() : '';

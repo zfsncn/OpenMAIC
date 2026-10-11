@@ -245,7 +245,23 @@ export async function POST(req: NextRequest) {
       return apiError('INVALID_URL', 403, blocked.message);
     }
     if (error instanceof QwenVoiceCloneError) {
-      return apiError(error.code, error.httpStatus || 502, qwenVoiceCloneErrorMessage(error));
+      // Pass the operation through so the wording names enrollment (this route
+      // only ever enrolls) and the provider's own code/message reach the
+      // caller. Wording stays vendor-neutral per the neutrality guard;
+      // `error.message` already carries the vendor code/message.
+      log.error(
+        `Voice registration failed [code=${error.code}`,
+        `http=${error.httpStatus ?? '-'}`,
+        `vendorCode=${error.vendorCode ?? '-'}`,
+        `vendorMessage=${error.vendorMessage ?? '-'}`,
+        `op=${error.operation ?? 'unknown'}`,
+        `]: ${error.message}`,
+      );
+      return apiError(
+        error.code,
+        error.httpStatus || 502,
+        qwenVoiceCloneErrorMessage(error, error.operation ?? 'enrollment'),
+      );
     }
     if (error instanceof InvalidReferenceAudioError) {
       return apiError(error.code, 400, error.message);

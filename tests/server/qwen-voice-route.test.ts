@@ -92,9 +92,14 @@ describe('Qwen voice registration route', () => {
     expect(body).toMatchObject({
       success: false,
       errorCode: 'QWEN_VC_HTTP_ERROR',
-      error: 'Qwen rejected the voice cloning request.',
+      // Enrollment-specific wording — the generic text used to claim "voice
+      // cloning" even for a synthesis failure, because both share `postJson`.
+      error: expect.stringContaining('Qwen rejected the voice enrollment request.'),
     });
     expect(body.error).not.toBe(body.errorCode);
+    // The provider's own `code` must reach the caller: a DashScope rejection is
+    // otherwise indistinguishable from any other failure.
+    expect(body.error).toContain('UpstreamFailure');
   });
 
   it('returns 400 for invalid reference audio', async () => {
