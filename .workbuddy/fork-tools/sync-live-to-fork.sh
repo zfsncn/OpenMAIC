@@ -71,14 +71,18 @@ fi
 
 echo ""
 echo ">>> [2/3] robocopy 现场 → fork（只覆盖+新增，不删除）"
-XDIR=(node_modules .next .workbuddy data dist test-results playwright-report blob-report .git .codegraph)
-args=("$(w "$LIVE")" "$(w "$FORK")" //E //NFL //NDL //NJH //NP)
-for d in "${XDIR[@]}"; do args+=(//XD "$(w "$LIVE/$d")" "$(w "$FORK/$d")"); done
-for f in tsconfig.tsbuildinfo .env.local _diag.txt; do args+=(//XF "$(w "$LIVE/$f")" "$(w "$FORK/$f")"); done
-args+=(//XF 'rollup.config-*.cjs')
+# ⚠️ node_modules 用目录名排除（不限层级）：pnpm workspace 有 2500+ 嵌套依赖，
+#    只排顶层会遍历到被占用的 .js 并每个空等 30 秒（2026-10-11 实测）。
+#    /R:1 /W:1 关闭长等待。
+XDIR=(node_modules .next .workbuddy data dist test-results playwright-report
+      blob-report coverage .git .codegraph .turbo)
+XFILE=(tsconfig.tsbuildinfo .env.local _diag.txt rollup.config-*.cjs)
+a=("$(w "$LIVE")" "$(w "$FORK")" //E //NFL //NDL //NJH //NP //R:1 //W:1)
+for d in "${XDIR[@]}"; do a+=(//XD "$d"); done
+for f in "${XFILE[@]}"; do a+=(//XF "$f"); done
 
 rc=0
-robocopy "${args[@]}" > "$TMP/rc.txt" 2>&1 || rc=$?
+robocopy "${a[@]}" > "$TMP/rc.txt" 2>&1 || rc=$?
 if [ "$rc" -ge 8 ]; then
   echo "❌ robocopy 失败，exit=$rc" >&2; tail -30 "$TMP/rc.txt" >&2; exit 1
 fi

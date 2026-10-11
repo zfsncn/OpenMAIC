@@ -81,24 +81,35 @@ if [ "$MODE" = "dry-run" ]; then
   exit 0
 fi
 
-echo ""
-echo ">>> [2/4] robocopy 镜像 fork → 现场"
-XDIR=(node_modules .next .workbuddy data dist test-results playwright-report blob-report .git .codegraph)
-args=("$(w "$FORK")" "$(w "$LIVE")" //E //NFL //NDL //NJH //NP)
-for d in "${XDIR[@]}"; do args+=(//XD "$(w "$FORK/$d")" "$(w "$LIVE/$d")"); done
-for f in tsconfig.tsbuildinfo .env.local _diag.txt; do args+=(//XF "$(w "$FORK/$f")" "$(w "$LIVE/$f")"); done
-args+=(//XF 'rollup.config-*.cjs')
+# ── robocopy 排除清单 ────────────────────────────────────────────────────
+# ⚠️ node_modules 必须写**全路径**：本仓库是 pnpm workspace，嵌套依赖有 2500+ 个
+#    （packages/*/node_modules、node_modules/.pnpm/*/node_modules……）。
+#    只排除顶层的话，robocopy 会去遍历嵌套依赖；其中被进程占用的 .js 会触发
+#    「另一个程序正在使用此文件」而**每个文件空等 30 秒**——单文件就能把整轮
+#    同步拖成十几分钟（2026-10-11 实测 12 分钟仍未完，已手工终止）。
+#    ⇒ 用目录名做排除（不写全路径），让 robocopy 在任何层级都跳过。
+XDIR=(node_modules .next .workbuddy data dist test-results playwright-report
+      blob-report coverage .git .codegraph .turbo)
+XFILE=(tsconfig.tsbuildinfo .env.local _diag.txt rollup.config-*.cjs)
 
-# ⚠️ 修复：原写法 `robocopy ... || true; echo $?` 因 $? 被 true 覆盖而恒为 0，
-#    robocopy 失败（≥8）会被静默吞掉。正确做法是取到真实返回码再判断。
-rc=0
-robocopy "${args[@]}" > "$TMP/rc.txt" 2>&1 || rc=$?
+run_robocopy() {  # $1=src $2=dst $3=输出文件
+  local a=("$1" "$2" //E //NFL //NDL //NJH //NP //R:1 //W:1)
+  for d in "${XDIR[@]}"; do a+=(//XD "$d"); done
+  for f in "${XFILE[@]}"; do a+=(//XF "$f"); done
+  local rc=0
+  # ⚠️ 修复：原写法 `robocopy ... || true; echo $?` 因 $? 被 true 覆盖而恒为 0，
+  #    robocopy 失败（≥8）会被静默吞掉。正确做法是取到真实返回码再判断。
+  robocopy "${a[@]}" > "$3" 2>&1 || rc=$?
+  echo "$rc"
+}
+
+rc=$(run_robocopy "$(w "$FORK")" "$(w "$LIVE")" "$TMP/rc.txt")
 if [ "$rc" -ge 8 ]; then
   echo "❌ robocopy 失败，exit=$rc（≥8 即失败）" >&2
   tail -30 "$TMP/rc.txt" >&2
   exit 1
 fi
-echo "robocopy exit=$rc（0-7 均成功）"
+echo "robocopy exit=$rc（0-7 均成功；/R:1 /W:1 已关闭长等待）"
 
 if [ "$MODE" = "apply-prune" ]; then
   echo ""
