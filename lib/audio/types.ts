@@ -9,6 +9,7 @@
  * - Azure TTS (https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech)
  * - GLM TTS (https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts)
  * - Qwen TTS (https://bailian.console.aliyun.com/)
+ * - CosyVoice TTS (Alibaba Cloud Bailian; clone-only, no system voice pool)
  * - Doubao TTS (https://www.volcengine.com/docs/6561/1257543)
  * - Browser Native TTS (Web Speech API, client-side only)
  *
@@ -84,6 +85,7 @@ export type BuiltInTTSProviderId =
   | 'azure-tts'
   | 'glm-tts'
   | 'qwen-tts'
+  | 'cosyvoice-tts'
   | 'voxcpm-tts'
   | 'doubao-tts'
   | 'elevenlabs-tts'

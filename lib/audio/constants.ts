@@ -83,6 +83,43 @@ export const DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL = 'qwen3-tts-vc-2026-01-22';
 /** Client-visible VC model. Server-only overrides are resolved in provider-config. */
 export const QWEN_TTS_VOICE_CLONE_MODEL = DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
 
+/**
+ * CosyVoice clone model. The provider's official replacement for the retired
+ * `qwen3-tts-vc-*` line (Qwen3-TTS non-realtime models were withdrawn).
+ *
+ * ⚠️ The 3.5 generation ships NO system voices: it synthesizes only from voices
+ * enrolled through `voice-enrollment`, hence `requiresRegisteredVoice` below and
+ * an empty catalog. Users must clone a voice before anything can be spoken.
+ */
+export const COSYVOICE_TTS_VOICE_CLONE_MODEL = 'cosyvoice-v3.5-plus';
+
+/** Sentinel voice id: this provider has no voice that is not enrolled. */
+export const COSYVOICE_NO_SYSTEM_VOICE = '__cosyvoice_requires_enrollment__';
+
+/**
+ * CosyVoice enrollment ids look like `cosyvoice-v3.5-plus-<prefix>-<hash>`, so a
+ * catalog voice can never collide with an enrolled one. Matching the model
+ * prefix keeps a hypothetical future system-voice id from being mistaken for a
+ * clone.
+ */
+export function isCosyVoiceCloneVoice(voiceId?: string): boolean {
+  return !!voiceId && voiceId !== COSYVOICE_NO_SYSTEM_VOICE;
+}
+
+/**
+ * Whether the provider/voice pair ignores the requested speaking rate.
+ *
+ * Both clone paths are rate-less: Qwen's VC model has no rate parameter, and
+ * CosyVoice's `SpeechSynthesizer` call takes none either. UI surfaces use this
+ * to disable the speed control instead of offering a slider that does nothing.
+ */
+export function ignoresTTSRate(providerId: string, voiceId?: string): boolean {
+  return (
+    (providerId === 'qwen-tts' && isQwenCloneVoice(voiceId)) ||
+    (providerId === 'cosyvoice-tts' && isCosyVoiceCloneVoice(voiceId))
+  );
+}
+
 export function isQwenVoiceCloneModel(modelId?: string, configuredModelId?: string): boolean {
   return (
     !!modelId &&
@@ -109,6 +146,10 @@ export function resolveTTSModelForVoice(
   voiceId: string,
   requestedModelId?: string,
 ): string | undefined {
+  // CosyVoice is clone-only: the enrolled voice is bound to the enrollment
+  // target model, so any voice must resolve to the clone model — there is no
+  // catalog voice that would justify a different one.
+  if (providerId === 'cosyvoice-tts') return COSYVOICE_TTS_VOICE_CLONE_MODEL;
   if (providerId !== 'qwen-tts') return requestedModelId;
   if (isQwenCloneVoice(voiceId)) return QWEN_TTS_VOICE_CLONE_MODEL;
   return requestedModelId && !isQwenVoiceCloneModel(requestedModelId)
@@ -705,6 +746,24 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
       },
     ],
     supportedFormats: ['mp3', 'wav', 'pcm'],
+  },
+
+  'cosyvoice-tts': {
+    id: 'cosyvoice-tts',
+    name: 'CosyVoice TTS (阿里云百炼)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+    icon: '/logos/bailian.svg',
+    // Clone-only: every speakable voice is one the user enrolled this session,
+    // so registered voices must stay bindable even without a preset catalog.
+    requiresRegisteredVoice: true,
+    models: [{ id: COSYVOICE_TTS_VOICE_CLONE_MODEL, name: 'CosyVoice v3.5 Plus' }],
+    defaultModelId: COSYVOICE_TTS_VOICE_CLONE_MODEL,
+    // Empty by design — the 3.5 generation has no system voice pool. A
+    // non-empty list here would let the UI offer voices the API rejects.
+    voices: [],
+    supportedFormats: ['mp3', 'wav'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
   },
 
   'minimax-tts': {
@@ -1338,6 +1397,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'cosyvoice-tts': COSYVOICE_NO_SYSTEM_VOICE,
   'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
@@ -1351,6 +1411,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'azure-tts': '',
   'glm-tts': 'glm-tts',
   'qwen-tts': 'qwen3-tts-flash',
+  'cosyvoice-tts': COSYVOICE_TTS_VOICE_CLONE_MODEL,
   'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',

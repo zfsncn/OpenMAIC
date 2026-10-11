@@ -10,6 +10,7 @@
  */
 
 import type { VoiceDesign } from '@/lib/audio/voice-design';
+import { cosyVoiceRegistrationAdapter } from '@/lib/audio/cosyvoice-registration';
 import { qwenVoiceCloneRegistrationAdapter } from '@/lib/audio/qwen-voice-clone-registration';
 import { voxcpmVoiceRegistrationAdapter } from '@/lib/audio/voxcpm-registration';
 
@@ -72,6 +73,7 @@ export interface VoiceRegistrationAdapter {
 /** providerId → adapter. The only seam to touch when adding a provider. */
 const VOICE_REGISTRATION_ADAPTERS: Record<string, VoiceRegistrationAdapter> = {
   'qwen-tts': qwenVoiceCloneRegistrationAdapter,
+  'cosyvoice-tts': cosyVoiceRegistrationAdapter,
   'voxcpm-tts': voxcpmVoiceRegistrationAdapter,
 };
 

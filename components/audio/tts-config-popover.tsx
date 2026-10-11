@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { getTTSVoices, isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
+import { getTTSVoices, ignoresTTSRate, resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import {
   getVoxCPMProviderOptions,
@@ -90,7 +90,9 @@ export function TtsConfigPopover() {
   const pillCls =
     'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
   const canPreview = ttsProviderId !== 'voxcpm-tts' || ttsVoice !== VOXCPM_AUTO_VOICE_ID;
-  const usesQwenClone = ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice);
+  // Neither clone path accepts a speaking rate (Qwen VC / CosyVoice both
+  // ignore it), so the control is disabled rather than silently dropped.
+  const usesRateLessClone = ignoresTTSRate(ttsProviderId, ttsVoice);
 
   const handleVoiceChange = (voiceId: string) => {
     setTTSVoice(voiceId);
@@ -238,7 +240,7 @@ export function TtsConfigPopover() {
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                 <span>{t('settings.ttsSpeed')}</span>
-                <span>{usesQwenClone ? '1×' : `${ttsSpeed.toFixed(2)}×`}</span>
+                <span>{usesRateLessClone ? '1×' : `${ttsSpeed.toFixed(2)}×`}</span>
               </div>
               <input
                 aria-label={t('settings.ttsSpeed')}
@@ -246,13 +248,13 @@ export function TtsConfigPopover() {
                 min={0.5}
                 max={2}
                 step={0.05}
-                value={usesQwenClone ? 1 : ttsSpeed}
-                disabled={usesQwenClone}
+                value={usesRateLessClone ? 1 : ttsSpeed}
+                disabled={usesRateLessClone}
                 onChange={(event) => setTTSSpeed(Number(event.target.value))}
                 className="w-full disabled:cursor-not-allowed disabled:opacity-50"
               />
             </div>
-            {usesQwenClone && (
+            {usesRateLessClone && (
               <p className="text-[11px] text-muted-foreground">
                 {t('settings.qwenCloneSpeedHint')}
               </p>

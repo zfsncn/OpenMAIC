@@ -13,6 +13,7 @@ import {
   DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
+  COSYVOICE_TTS_VOICE_CLONE_MODEL,
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
 
@@ -715,6 +716,11 @@ export function resolveQwenVoiceCloneModel(): string {
   return process.env.TTS_QWEN_VOICE_CLONE_MODEL || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
 }
 
+/** CosyVoice counterpart of {@link resolveQwenVoiceCloneModel}. */
+export function resolveCosyVoiceVoiceCloneModel(): string {
+  return process.env.TTS_COSYVOICE_VOICE_CLONE_MODEL || COSYVOICE_TTS_VOICE_CLONE_MODEL;
+}
+
 export class TTSModelNotAllowedError extends Error {
   readonly code = 'INVALID_REQUEST';
   readonly httpStatus = 400;
@@ -769,6 +775,19 @@ export function resolveTTSModel(
     if (normalizedClientModel) return normalizedClientModel;
     if (pinnedModels.length > 0) return pinnedModels[0];
     return undefined;
+  }
+
+  if (providerId === 'cosyvoice-tts') {
+    // Clone-only provider: the enrolled voice is bound to the enrollment target
+    // model, so the model follows the server-resolved clone target rather than
+    // any client hint. An operator pin widens the allowed set (so a restricted
+    // deployment can force a specific model) but never narrows below the clone
+    // target, which is the only model an enrolled voice can speak.
+    const cloneModel = resolveCosyVoiceVoiceCloneModel();
+    if (clientModel && !pinnedModels.includes(clientModel) && clientModel !== cloneModel) {
+      throw new TTSModelNotAllowedError(providerId, clientModel);
+    }
+    return clientModel ?? cloneModel;
   }
 
   if (pinnedModels.length > 0) return pinnedModels[0];

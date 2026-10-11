@@ -28,7 +28,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import {
   TTS_PROVIDERS,
   DEFAULT_TTS_VOICES,
-  isQwenCloneVoice,
+  ignoresTTSRate,
   QWEN_TTS_VOICE_CLONE_MODEL,
   resolveTTSModelForVoice,
   getManuallySelectableTTSModels,
@@ -65,6 +65,7 @@ import {
   VOXCPM_REFERENCE_AUDIO_MAX_SECONDS,
   useVoxCPMVoiceProfiles,
   useQwenVoiceProfiles,
+  useCosyVoiceProfiles,
 } from '@/lib/audio/voxcpm-voices';
 import {
   VOXCPM_BACKENDS,
@@ -122,7 +123,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         ? ((providerConfig?.customVoices as Array<{ id: string }> | undefined) || [])[0]?.id ||
           'default'
         : DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
-  const cloneSpeedDisabled = selectedProviderId === 'qwen-tts' && isQwenCloneVoice(effectiveVoice);
+  const cloneSpeedDisabled = ignoresTTSRate(selectedProviderId, effectiveVoice);
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -569,6 +570,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
       {selectedProviderId === 'voxcpm-tts' && <VoxCPMVoiceManager />}
       {selectedProviderId === 'qwen-tts' && <QwenVoiceCloneManager />}
+      {selectedProviderId === 'cosyvoice-tts' && <CosyVoiceCloneManager />}
 
       {/* Custom Voice List Management */}
       {isCustom && (
@@ -1365,6 +1367,13 @@ function QwenVoiceCloneManager() {
           {t('settings.qwenCloneVoicesTitle')}
         </Label>
         <p className="mt-1 text-xs text-muted-foreground">{t('settings.qwenCloneRefAudioHint')}</p>
+        {/* The VC model this provider's clones were enrolled against was
+            withdrawn by the vendor; existing clone ids can no longer be
+            synthesized. The banner is unconditional for this panel because the
+            panel only manages clone voices. */}
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+          {t('settings.qwenCloneModelRetired')}
+        </div>
         {!recordingSupported && (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
             {t('settings.qwenCloneUnsupported')}
@@ -1481,6 +1490,332 @@ function formatRecordingTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * CosyVoice voice-clone manager.
+ *
+ * Differs from the Qwen manager in two user-visible ways:
+ * - NO transcript field: CosyVoice ASRs the clip itself, so there is nothing
+ *   for the user to type.
+ * - The upload/record hint steers to MP3: the enrollment endpoint refuses WAV
+ *   inline payloads (measured), so a WAV upload would be rejected no matter
+ *   what MIME it is labelled with.
+ */
+function CosyVoiceCloneManager() {
+  const { t } = useI18n();
+  const { profiles, addCloneVoice, deleteVoice } = useCosyVoiceProfiles();
+  const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
+  const ttsVoice = useSettingsStore((state) => state.ttsVoice);
+  const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
+  const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
+  const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
+  const { previewing, startPreview, stopPreview } = useTTSPreview();
+  const providerConfig = ttsProvidersConfig['cosyvoice-tts'];
+
+  const [name, setName] = useState('');
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopRecordingTimer = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  };
+
+  const stopRecordingStream = () => {
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+  };
+
+  const handleFileChange = async (file: File | null) => {
+    if (!file) {
+      setReferenceFile(null);
+      return;
+    }
+    try {
+      await validateVoxCPMReferenceAudio(file);
+      setReferenceFile(file);
+    } catch (error) {
+      setReferenceFile(null);
+      toast.error(error instanceof Error ? error.message : t('settings.cosyvoiceCloneSaveFailed'));
+    }
+  };
+
+  const startRecording = async () => {
+    if (isRecording) return;
+    if (
+      typeof navigator === 'undefined' ||
+      typeof MediaRecorder === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      toast.error(t('settings.cosyvoiceCloneUnsupported'));
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // The enrollment endpoint accepts MP3 inline payloads; prefer the MP3
+      // container when the browser can produce it (Chrome/Edge can).
+      const mimeType = MediaRecorder.isTypeSupported('audio/mpeg')
+        ? 'audio/mpeg'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : undefined;
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recordingChunksRef.current = [];
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        void (async () => {
+          try {
+            const blob = new Blob(recordingChunksRef.current, {
+              type: recorder.mimeType || 'audio/webm',
+            });
+            if (blob.size > 0) {
+              const ext = blob.type.includes('mpeg') ? 'mp3' : 'webm';
+              const file = new File([blob], `cosyvoice-reference-${Date.now()}.${ext}`, {
+                type: blob.type,
+              });
+              setReferenceFile(file);
+              setName((currentName) =>
+                preserveRecordedVoiceName(currentName, t('settings.voxcpmRecordedVoiceName')),
+              );
+            }
+          } catch (error) {
+            toast.error(
+              error instanceof Error ? error.message : t('settings.cosyvoiceCloneSaveFailed'),
+            );
+          } finally {
+            recordingChunksRef.current = [];
+            setIsRecording(false);
+            setRecordingSeconds(0);
+            stopRecordingTimer();
+            stopRecordingStream();
+          }
+        })();
+      };
+      recorder.start();
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((seconds) => {
+          const nextSeconds = seconds + 1;
+          if (nextSeconds >= 58 && mediaRecorderRef.current?.state === 'recording') {
+            mediaRecorderRef.current.stop();
+          }
+          return nextSeconds;
+        });
+      }, 1000);
+    } catch (error) {
+      setIsRecording(false);
+      stopRecordingTimer();
+      stopRecordingStream();
+      toast.error(error instanceof Error ? error.message : t('settings.cosyvoiceCloneUnsupported'));
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+  };
+
+  useEffect(() => {
+    return () => {
+      stopRecordingTimer();
+      if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+      stopRecordingStream();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!previewing) setPreviewingVoiceId(null);
+  }, [previewing]);
+
+  const handleSave = async () => {
+    if (!name.trim() || !referenceFile) return;
+    setSaving(true);
+    try {
+      const voiceId = await addCloneVoice(
+        { name, referenceAudio: referenceFile },
+        {
+          ttsApiKey: providerConfig?.apiKey || undefined,
+          ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || undefined,
+        },
+      );
+      if (ttsProviderId === 'cosyvoice-tts') setTTSVoice(voiceId);
+      setName('');
+      setReferenceFile(null);
+      toast.success(t('settings.cosyvoiceCloneSaved'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('settings.cosyvoiceCloneSaveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePreview = async (voiceId: string) => {
+    if (previewingVoiceId === voiceId) {
+      stopPreview();
+      setPreviewingVoiceId(null);
+      return;
+    }
+    setPreviewingVoiceId(voiceId);
+    try {
+      await startPreview({
+        text: t('settings.ttsTestTextDefault'),
+        providerId: 'cosyvoice-tts',
+        voice: voiceId,
+        speed: 1.0,
+        apiKey: providerConfig?.apiKey,
+        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
+      });
+    } catch (error) {
+      setPreviewingVoiceId(null);
+      toast.error(error instanceof Error ? error.message : t('settings.cosyvoiceCloneSaveFailed'));
+    }
+  };
+
+  const handleDelete = async (voiceId: string) => {
+    const vendorDeleted = await deleteVoice(voiceId, {
+      ttsApiKey: providerConfig?.apiKey || undefined,
+      ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || undefined,
+    });
+    if (!vendorDeleted) toast.warning(t('settings.qwenCloneDeleteWarning'));
+    if (ttsProviderId === 'cosyvoice-tts' && ttsVoice === voiceId) {
+      setTTSProviderConfig('cosyvoice-tts', {
+        modelId: TTS_PROVIDERS['cosyvoice-tts'].defaultModelId,
+      });
+    }
+  };
+
+  const recordingSupported =
+    typeof navigator !== 'undefined' &&
+    typeof MediaRecorder !== 'undefined' &&
+    !!navigator.mediaDevices?.getUserMedia;
+
+  return (
+    <div className="space-y-4 pt-2">
+      <div>
+        <Label className="text-base font-semibold leading-normal">
+          {t('settings.cosyvoiceCloneVoicesTitle')}
+        </Label>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t('settings.cosyvoiceCloneRefAudioHint')}
+        </p>
+        {!recordingSupported && (
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
+            {t('settings.cosyvoiceCloneUnsupported')}
+          </p>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-border/70 bg-background">
+        <div className="grid lg:grid-cols-[minmax(0,45fr)_minmax(0,55fr)]">
+          {/* 左：音色池（结果展示区） */}
+          <section className="flex min-h-0 flex-col border-b border-border/50 lg:border-b-0">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-4">
+              <span className="text-sm font-medium">{t('settings.voxcpmVoicePool')}</span>
+              <span className="text-xs text-muted-foreground">
+                {t('settings.voxcpmVoiceCount', { count: profiles.length })}
+              </span>
+            </div>
+            <div className="max-h-[360px] min-h-[240px] overflow-y-auto">
+              {profiles.length ? (
+                profiles.map((profile) => (
+                  <VoiceProfileRow
+                    key={profile.id}
+                    icon={<FileAudio className="h-4 w-4" />}
+                    title={profile.name}
+                    badge={t('settings.voxcpmClone')}
+                    detail={profile.referenceAudioName || profile.id}
+                    kind="clone"
+                    previewing={previewingVoiceId === profile.id}
+                    onPreview={() => handlePreview(profile.id)}
+                    onDelete={() => handleDelete(profile.id)}
+                  />
+                ))
+              ) : (
+                <div className="flex min-h-[200px] items-center justify-center px-4 py-8 text-center text-sm text-muted-foreground/60">
+                  {t('settings.voxcpmNoCustomVoices')}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 右：创建音色（操作区） */}
+          <section className="p-3">
+            <div className="flex h-full flex-col gap-3 rounded-lg bg-muted/40 p-4">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="inline-flex h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground">
+                  <Upload className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {referenceFile ? referenceFile.name : t('settings.cosyvoiceCloneUploadShort')}
+                  </span>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleFileChange(event.target.files?.[0] || null);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+                <Button
+                  type="button"
+                  variant={isRecording ? 'destructive' : 'outline'}
+                  disabled={!recordingSupported}
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className="h-10 gap-2 rounded-md"
+                >
+                  {isRecording ? (
+                    <>
+                      <Square className="h-3.5 w-3.5" />
+                      {formatRecordingTime(recordingSeconds)}
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="h-3.5 w-3.5" />
+                      {t('settings.voxcpmRecord')}
+                    </>
+                  )}
+                </Button>
+              </div>
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t('settings.voxcpmCloneVoiceNamePlaceholder')}
+                className="h-10 rounded-md text-sm"
+              />
+              <Button
+                size="sm"
+                onClick={handleSave}
+                disabled={saving || !name.trim() || !referenceFile}
+                className="h-10 w-full gap-1.5 rounded-md"
+              >
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                {t('settings.voxcpmAddClone')}
+              </Button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function VoiceProfileRow({

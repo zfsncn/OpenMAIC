@@ -96,6 +96,8 @@ import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
 import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS } from './constants';
 import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
+import { CosyVoiceError, synthesizeCosyVoice } from './cosyvoice-voice-clone';
+import { evictCosyVoiceRegistrationMemo } from './cosyvoice-registration';
 import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
 import { splitConcatenatedJsonObjects } from './json-stream';
 import {
@@ -305,6 +307,9 @@ export async function generateTTS(
 
       case 'qwen-tts':
         return await generateQwenTTS(config, text, signal);
+
+      case 'cosyvoice-tts':
+        return await generateCosyVoiceTTS(config, text, signal);
 
       case 'voxcpm-tts':
         return await generateVoxCPMTTS(config, text, signal);
@@ -1025,6 +1030,44 @@ async function generateQwenTTS(
     audio: downloaded.bytes,
     format: 'wav', // Qwen3 TTS returns WAV format
   };
+}
+
+/**
+ * CosyVoice implementation (DashScope `SpeechSynthesizer` path).
+ *
+ * ⚠️ CosyVoice does NOT speak the multimodal-generation endpoint that Qwen-TTS
+ * uses; calling it there yields `Model not exist.` from the gateway. It also
+ * has no system voice pool, so every request must carry an enrolled voice id —
+ * there is no catalog branch to fall back to.
+ */
+async function generateCosyVoiceTTS(
+  config: TTSModelConfig,
+  text: string,
+  signal: AbortSignal,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['cosyvoice-tts'].defaultBaseUrl;
+  const targetModel = resolveTTSModelForVoice('cosyvoice-tts', config.voice, config.modelId);
+
+  try {
+    return await synthesizeCosyVoice(
+      {
+        apiKey: config.apiKey,
+        baseUrl,
+        targetModel,
+        publicOnly: config.publicOnly,
+        managed: config.managed,
+      },
+      text,
+      config.voice,
+      config.speed,
+      signal,
+    );
+  } catch (error) {
+    if (error instanceof CosyVoiceError && error.code === 'COSYVOICE_VOICE_NOT_FOUND') {
+      evictCosyVoiceRegistrationMemo(config.voice);
+    }
+    throw error;
+  }
 }
 
 /**

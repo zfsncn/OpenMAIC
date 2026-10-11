@@ -20,7 +20,7 @@ import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
+import { ignoresTTSRate, resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { toast } from 'sonner';
 import {
   isVoiceBindingUnavailable,
@@ -440,8 +440,11 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         voiceId,
         modelId ?? ttsProvidersConfig[providerId]?.modelId,
       );
+      // A per-agent binding to a clone voice may point at a voice the provider
+      // has since dropped (retired model, deleted enrollment). Both clone paths
+      // carry the risk, so the global voice is offered as a fallback for either.
       const fallbackVoice =
-        agentId && providerId === 'qwen-tts' && isQwenCloneVoice(voiceId)
+        agentId && ignoresTTSRate(providerId, voiceId)
           ? resolveNarratorVoiceBinding(
               undefined,
               {

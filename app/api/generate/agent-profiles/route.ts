@@ -13,7 +13,8 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
-import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
+import { ignoresTTSRate, resolveTTSModelForVoice } from '@/lib/audio/constants';
+import type { TTSProviderId } from '@/lib/audio/types';
 
 const log = createLogger('Agent Profiles API');
 
@@ -100,14 +101,14 @@ function resolveNarratorVoice(
     };
   }
 
-  // Qwen clone IDs are account-scoped and self-contained: local profile storage
-  // is not authoritative, so honor them even when not advertised and let the
-  // model follow the voice.
-  if (narratorVoice.providerId === 'qwen-tts' && isQwenCloneVoice(narratorVoice.voiceId)) {
+  // Clone voice IDs are account-scoped and self-contained: local profile
+  // storage is not authoritative, so honor them even when not advertised and
+  // let the model follow the voice. Applies to every clone-only path.
+  if (ignoresTTSRate(narratorVoice.providerId, narratorVoice.voiceId)) {
     return {
       providerId: narratorVoice.providerId,
       modelId: resolveTTSModelForVoice(
-        narratorVoice.providerId,
+        narratorVoice.providerId as TTSProviderId,
         narratorVoice.voiceId,
         narratorVoice.modelId,
       ),

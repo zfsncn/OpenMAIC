@@ -30,6 +30,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
+import { CosyVoiceError, cosyVoiceErrorMessage } from '@/lib/audio/cosyvoice-voice-clone';
 import { isQwenCloneVoice } from '@/lib/audio/constants';
 
 const log = createLogger('TTS API');
@@ -214,6 +215,27 @@ export async function POST(req: NextRequest) {
     }
     if (error instanceof QwenTTSError) {
       return apiError(error.code, error.httpStatus, error.message);
+    }
+    if (error instanceof CosyVoiceError) {
+      // Same rationale as the Qwen branch: log the provider's own code/message
+      // so an upstream rejection is actionable, while keeping this route
+      // vendor-neutral (only the hoisted identifiers are named here).
+      log.error(
+        `TTS provider rejected the request [op=${error.operation ?? 'unknown'}`,
+        `code=${error.code}`,
+        `http=${error.httpStatus ?? '-'}`,
+        `vendorCode=${error.vendorCode ?? '-'}`,
+        `vendorMessage=${error.vendorMessage ?? '-'}`,
+        `provider=${ttsProviderId ?? 'unknown'}`,
+        `voice=${ttsVoice ?? 'unknown'}`,
+        `audioId=${audioId ?? 'unknown'}`,
+        `]: ${error.message}`,
+      );
+      return apiError(
+        error.code,
+        error.httpStatus || 502,
+        cosyVoiceErrorMessage(error, error.operation),
+      );
     }
     if (error instanceof TTSModelNotAllowedError) {
       return apiError(error.code, error.httpStatus, error.message);

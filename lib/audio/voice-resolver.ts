@@ -106,6 +106,20 @@ export function resolveAgentVoice(
     }
     const fromEnabled = enabledProviders.find((p) => p.providerId === choice.providerId);
     if (!fromEnabled) continue;
+    // CosyVoice has no catalog voice at all — its only speakable voices are
+    // enrolled clones, whose ids live in the browser profile store, so the
+    // id cannot be validated against a static list. Any non-empty id for an
+    // enabled provider is accepted (same trust model as Qwen clones).
+    if (choice.providerId === 'cosyvoice-tts') {
+      if (choice.voiceId.trim()) {
+        return {
+          providerId: choice.providerId,
+          modelId: resolveTTSModelForVoice(choice.providerId, choice.voiceId, choice.modelId),
+          voiceId: choice.voiceId,
+        };
+      }
+      continue;
+    }
     if (choice.providerId === 'qwen-tts') {
       const catalogVoice = isQwenCatalogVoice(choice.voiceId);
       if (catalogVoice || choice.voiceId.trim()) {
@@ -266,7 +280,11 @@ export function getEnabledProvidersWithVoices(
   for (const [id, config] of Object.entries(TTS_PROVIDERS)) {
     const providerId = id as TTSProviderId;
     if (providerId === 'browser-native-tts') continue;
-    if (config.voices.length === 0) continue;
+    // Clone-only providers ship an empty catalog by design: their speakable
+    // voices are the user's enrolled profiles, so an empty static list must
+    // not disqualify the provider — only "no profile AND no catalog" does.
+    const requiresRegisteredVoice = config.requiresRegisteredVoice === true;
+    if (config.voices.length === 0 && !requiresRegisteredVoice) continue;
 
     const providerConfig = ttsProvidersConfig[providerId];
     if (!isTTSProviderEnabled(providerId, providerConfig)) continue;
@@ -318,7 +336,14 @@ export function getEnabledProvidersWithVoices(
                   .map((v) => ({ id: v.id, name: v.name, language: v.language }));
           if (providerId === VOXCPM_TTS_PROVIDER_ID) {
             compatibleVoices.push(...userVoices);
-          } else if (providerId !== 'qwen-tts' || isQwenVoiceCloneModel(model.id)) {
+          } else if (
+            // Qwen's clone model takes only enrolled ids (its catalog voices
+            // belong to the flash models); CosyVoice is the inverse — clone-
+            // only, so its single model groups exactly the enrolled profiles.
+            providerId === 'cosyvoice-tts' ||
+            providerId !== 'qwen-tts' ||
+            isQwenVoiceCloneModel(model.id)
+          ) {
             compatibleVoices.push(...userVoices);
           }
           modelGroups.push({

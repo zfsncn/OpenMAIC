@@ -21,6 +21,7 @@ import type { AgentVoiceOverride } from '@/lib/audio/voice-resolver';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import {
   ASR_PROVIDERS,
+  COSYVOICE_TTS_VOICE_CLONE_MODEL,
   CUSTOM_ASR_DEFAULT_LANGUAGES,
   DEFAULT_TTS_VOICES,
   isQwenCatalogVoice,
@@ -674,6 +675,12 @@ const getDefaultAudioConfig = () => ({
     'azure-tts': { apiKey: '', baseUrl: '', enabled: true },
     'glm-tts': { apiKey: '', baseUrl: '', enabled: true },
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: true },
+    'cosyvoice-tts': {
+      apiKey: '',
+      baseUrl: '',
+      modelId: COSYVOICE_TTS_VOICE_CLONE_MODEL,
+      enabled: true,
+    },
     'voxcpm-tts': {
       apiKey: '',
       baseUrl: '',

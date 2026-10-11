@@ -419,6 +419,88 @@ export function useQwenVoiceProfiles() {
   return { profiles, loading, refresh, addCloneVoice, deleteVoice };
 }
 
+/**
+ * CosyVoice counterpart of {@link useQwenVoiceProfiles}.
+ *
+ * Two contract differences from the Qwen line:
+ * - NO transcript. CosyVoice ASRs the clip server-side, so `refText` is not
+ *   collected and not stored.
+ * - No WAV normalization. The enrollment endpoint refuses `audio/wav` inline
+ *   payloads outright (measured), so the clip is kept exactly as the user
+ *   supplied it and the UI steers uploads toward MP3. Bytes in, bytes out.
+ */
+export function useCosyVoiceProfiles() {
+  const [profiles, setProfiles] = useState<VoiceProfileRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await db.voiceProfiles.where('providerId').equals('cosyvoice-tts').toArray();
+      rows.sort((a, b) => b.updatedAt - a.updatedAt);
+      setProfiles(rows);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    window.addEventListener(VOICE_PROFILES_CHANGED, refresh);
+    return () => window.removeEventListener(VOICE_PROFILES_CHANGED, refresh);
+  }, [refresh]);
+
+  const addCloneVoice = useCallback(
+    async (
+      input: { name: string; referenceAudio: File },
+      request: VoiceRegistrationRequestConfig,
+    ) => {
+      const referenceAudio = input.referenceAudio;
+      const voiceId = await registerVoiceFromReference(
+        'cosyvoice-tts',
+        {
+          name: input.name,
+          referenceAudio,
+          refText: '',
+        },
+        request,
+      );
+      const now = Date.now();
+      await db.voiceProfiles.put({
+        id: voiceId,
+        providerId: 'cosyvoice-tts',
+        kind: 'clone',
+        name: input.name.trim(),
+        referenceAudio,
+        referenceAudioName: referenceAudio.name,
+        referenceAudioMimeType: referenceAudio.type,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await refresh();
+      notifyVoiceProfilesChanged();
+      return voiceId;
+    },
+    [refresh],
+  );
+
+  const deleteVoice = useCallback(
+    async (id: string, request: VoiceRegistrationRequestConfig) => {
+      const vendorDeleted = await deleteRegisteredVoice('cosyvoice-tts', id, request);
+      if (!vendorDeleted) {
+        console.warn('[CosyVoiceProfiles] Provider deletion failed; removing local profile');
+      }
+      await db.voiceProfiles.delete(id);
+      await refresh();
+      notifyVoiceProfilesChanged();
+      return vendorDeleted;
+    },
+    [refresh],
+  );
+
+  return { profiles, loading, refresh, addCloneVoice, deleteVoice };
+}
+
 export async function getVoxCPMProviderOptions(
   voiceId: string,
   context?: VoxCPMVoicePromptContext,

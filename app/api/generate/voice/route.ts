@@ -20,6 +20,7 @@ import {
   isServerTTSProviderDisabled,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
+  resolveCosyVoiceVoiceCloneModel,
   resolveQwenVoiceCloneModel,
   resolveTTSModel,
 } from '@/lib/server/provider-config';
@@ -32,6 +33,7 @@ import {
   type VoiceRegistrationConfig,
 } from '@/lib/audio/voice-registration';
 import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
+import { CosyVoiceError, cosyVoiceErrorMessage } from '@/lib/audio/cosyvoice-voice-clone';
 import { InvalidReferenceAudioError } from '@/lib/audio/wav-validate';
 
 const log = createLogger('Voice Registration API');
@@ -144,10 +146,14 @@ export async function POST(req: NextRequest) {
       publicOnly,
       // A server-configured provider's endpoint may be on a local network.
       managed,
+      // Clone providers resolve their enrollment target model themselves; the
+      // generic path resolves the synthesis model for non-clone providers.
       model:
         providerId === 'qwen-tts'
           ? resolveQwenVoiceCloneModel()
-          : resolveTTSModel(providerId, body.ttsModelId),
+          : providerId === 'cosyvoice-tts'
+            ? resolveCosyVoiceVoiceCloneModel()
+            : resolveTTSModel(providerId, body.ttsModelId),
     };
 
     if (deleting) {
@@ -261,6 +267,23 @@ export async function POST(req: NextRequest) {
         error.code,
         error.httpStatus || 502,
         qwenVoiceCloneErrorMessage(error, error.operation ?? 'enrollment'),
+      );
+    }
+    if (error instanceof CosyVoiceError) {
+      // CosyVoice counterpart of the branch above; the provider's own words are
+      // the actionable part (clip rejected by ASR gate, voice not ready, …).
+      log.error(
+        `Voice registration failed [code=${error.code}`,
+        `http=${error.httpStatus ?? '-'}`,
+        `vendorCode=${error.vendorCode ?? '-'}`,
+        `vendorMessage=${error.vendorMessage ?? '-'}`,
+        `op=${error.operation ?? 'unknown'}`,
+        `]: ${error.message}`,
+      );
+      return apiError(
+        error.code,
+        error.httpStatus || 502,
+        cosyVoiceErrorMessage(error, error.operation ?? 'enrollment'),
       );
     }
     if (error instanceof InvalidReferenceAudioError) {
