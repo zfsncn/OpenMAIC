@@ -31,7 +31,14 @@ root, out = sys.argv[1], sys.argv[2]
 SKIP = {'node_modules','.next','.git','.codegraph','data','test-results',
         'playwright-report','blob-report','coverage','.workbuddy','dist'}
 XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt'}
-XGLOT = ['packages/*/rollup.config-*.cjs']   # 构建期临时产物，非源码
+XGLOT = ['packages/*/rollup.config-*.cjs',   # 构建期临时产物，非源码
+         '历史副本*']                          # 0 字节杂项：见下方说明
+# ⚠️ `历史副本（内容相同），保留仅作回退，**不要再改它**。` 是仓库根一个 0 字节
+#    文件，不属于源码。它**会被某个外部进程反复重建**（2026-10-11 移走三次、每次
+#    流水线前又出现），而现场不是 git 仓库、git 状态拦不住它，于是每轮同步的漂移
+#    校验都会报「仅现场=1」并拒绝 build。既然它不是源码，就在快照层忽略它，避免
+#    一个空文件反复阻断整条流水线。（文件本身未删除，备份在
+#    `.workbuddy/tmp/legacy-empty-files/`。）
 m = {}
 for r, dirs, files in os.walk(root):
     dirs[:] = [d for d in dirs if d not in SKIP]
