@@ -94,6 +94,11 @@ guard_fork_clean
 hr; echo ">>> [0/5] 记录回滚基线"
 OLD_ID=$(docker inspect "$APP" --format '{{.Image}}' 2>/dev/null || echo '(容器不存在)')
 echo "现役容器镜像 = $OLD_ID"
+# 数据基线：用于收尾断言「本轮没动数据」（改代码 ≠ 改数据）
+PSQL0() { docker exec -i openmaic-new-db psql -U openmaic -d openmaic -tAc "$1" 2>/dev/null | tr -d ' \r'; }
+BASE_STAGES=$(PSQL0 "SELECT count(*) FROM document_stages s JOIN stage_meta m ON m.stage_id=s.id WHERE m.deleted_at IS NULL;")
+BASE_SCENES=$(PSQL0 "SELECT count(*) FROM document_scenes;")
+echo "数据基线   =课程 ${BASE_STAGES:-?} / 场景 ${BASE_SCENES:-?}"
 if [ "$APPLY" -eq 1 ]; then
   if [ -n "$OLD_ID" ] && [ "$OLD_ID" != "(容器不存在)" ]; then
     docker tag "$OLD_ID" "openmaic-new:pre-$TAG"
@@ -171,13 +176,27 @@ echo "标签 = $TAGGED"
 if [ "$CTR_IMG" = "$TAGGED" ]; then echo "✅ 容器已运行新镜像"; else echo "❌ 容器与镜像不一致"; FAIL=1; fi
 
 echo "--- 5.4 数据未丢（查库，红线 8）---"
-STAGES=$(docker exec -i openmaic-new-db psql -U openmaic -d openmaic -tAc \
-  "SELECT count(*) FROM document_stages WHERE deleted_at IS NULL;" 2>/dev/null | tr -d ' \r' || echo 'ERR')
-SCENES=$(docker exec -i openmaic-new-db psql -U openmaic -d openmaic -tAc \
-  "SELECT count(*) FROM document_scenes;" 2>/dev/null | tr -d ' \r' || echo 'ERR')
-echo "在世课程 = ${STAGES:-ERR} | 场景 = ${SCENES:-ERR}"
-if [ "$STAGES" = "ERR" ] || [ -z "$STAGES" ]; then echo "❌ 查库失败"; FAIL=1;
-else echo "✅ 数据在位"; fi
+# ⚠️ deleted_at 在 stage_meta 上，不在 document_stages 上（2026-10-11 实测踩到）
+PSQL() { docker exec -i openmaic-new-db psql -U openmaic -d openmaic -tAc "$1" 2>/dev/null | tr -d ' \r'; }
+STAGES=$(PSQL "SELECT count(*) FROM document_stages s JOIN stage_meta m ON m.stage_id=s.id WHERE m.deleted_at IS NULL;")
+SCENES=$(PSQL "SELECT count(*) FROM document_scenes;")
+ASSETS=$(PSQL "SELECT count(*) FROM asset_entries;")
+echo "在世课程 = ${STAGES:-ERR} | 场景 = ${SCENES:-ERR} | 资产 = ${ASSETS:-ERR}"
+if [ -z "$STAGES" ] || [ -z "$SCENES" ] || [ "$STAGES" = "ERR" ]; then
+  echo "❌ 查库失败（课程/场景计数取不到）"; FAIL=1
+else
+  echo "✅ 数据在位"
+  # 与本轮开始前对比，代码改造绝不允许动数据（红线：改代码 ≠ 改数据）
+  if [ -n "${BASE_STAGES:-}" ] && [ -n "${BASE_SCENES:-}" ]; then
+    if [ "$STAGES" != "$BASE_STAGES" ] || [ "$SCENES" != "$BASE_SCENES" ]; then
+      echo "❌ 数据与流水线开始前不一致（课程 $BASE_STAGES→$STAGES / 场景 $BASE_SCENES→$SCENES）"
+      echo "   本流水线只改代码、不改数据。DB 变更须单独授权并先pg_dump。"
+      FAIL=1
+    else
+      echo "✅ 与流水线开始前一致（未动数据）"
+    fi
+  fi
+fi
 
 hr
 if [ "$FAIL" -eq 0 ]; then
