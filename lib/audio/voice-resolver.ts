@@ -2,6 +2,7 @@ import type { TTSProviderId } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
+  isCosyVoiceCloneVoice,
   isQwenCatalogVoice,
   isQwenCloneVoice,
   isQwenVoiceCloneModel,
@@ -107,11 +108,13 @@ export function resolveAgentVoice(
     const fromEnabled = enabledProviders.find((p) => p.providerId === choice.providerId);
     if (!fromEnabled) continue;
     // CosyVoice has no catalog voice at all — its only speakable voices are
-    // enrolled clones, whose ids live in the browser profile store, so the
-    // id cannot be validated against a static list. Any non-empty id for an
-    // enabled provider is accepted (same trust model as Qwen clones).
+    // enrolled clones, whose ids live in the browser profile store, so the id
+    // cannot be validated against a static list. Any non-empty id for an
+    // enabled provider is accepted (same trust model as Qwen clones) — but the
+    // no-voice sentinel is NOT an id, and passing it through would reach the
+    // engine as an unknown speaker (418).
     if (choice.providerId === 'cosyvoice-tts') {
-      if (choice.voiceId.trim()) {
+      if (isCosyVoiceCloneVoice(choice.voiceId)) {
         return {
           providerId: choice.providerId,
           modelId: resolveTTSModelForVoice(choice.providerId, choice.voiceId, choice.modelId),
@@ -204,8 +207,11 @@ export function resolveNarratorVoiceForGeneration(
   const trimmed = voiceId?.trim();
   if (!providerId || !trimmed) return undefined;
   if (!isTTSProviderEnabled(providerId, providerConfig)) return undefined;
+  // The clone-only sentinel means "nothing enrolled yet", not a voice. Pinning
+  // it would advertise a speaker the engine rejects.
+  if (providerId === 'cosyvoice-tts' && !isCosyVoiceCloneVoice(trimmed)) return undefined;
   const modelId =
-    providerId === 'qwen-tts' && isQwenCloneVoice(trimmed)
+    providerId === 'cosyvoice-tts' || (providerId === 'qwen-tts' && isQwenCloneVoice(trimmed))
       ? resolveTTSModelForVoice(providerId, trimmed, providerConfig?.modelId)
       : undefined;
   return { providerId, voiceId: trimmed, ...(modelId ? { modelId } : {}) };

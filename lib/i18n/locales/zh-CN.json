@@ -1532,6 +1532,7 @@
     "qwenCloneRefAudioHint": "请使用 1–60 秒的干净人声，推荐 10–20 秒；音频会转换为 24 kHz 单声道 PCM WAV。",
     "cosyvoiceCloneVoicesTitle": "CosyVoice 克隆音色",
     "cosyvoiceCloneRefAudioHint": "上传或录制一段真实人声 MP3（建议 10–30 秒）。样本会在服务端做语音识别校验，纯音或静音会被拒绝。无需文字稿。",
+    "cosyvoiceTestRequiresVoice": "请先添加克隆音色 —— 该服务只能使用你复刻的音色。",
     "cosyvoiceCloneUploadShort": "上传 MP3",
     "cosyvoiceCloneSaved": "音色克隆成功。",
     "cosyvoiceCloneSaveFailed": "音色克隆失败。",

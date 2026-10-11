@@ -1532,6 +1532,7 @@
     "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
     "cosyvoiceCloneVoicesTitle": "Клонированные голоса CosyVoice",
     "cosyvoiceCloneRefAudioHint": "Загрузите или запишите MP3-фрагмент реальной речи (рекомендуется 10–30 с). Образец проверяется распознаванием речи на сервере; чистые тоны и тишина отклоняются. Транскрипция не требуется.",
+    "cosyvoiceTestRequiresVoice": "Сначала добавьте клонированный голос — сервис может произносить только ваши клоны.",
     "cosyvoiceCloneUploadShort": "Загрузить MP3",
     "cosyvoiceCloneSaved": "Голос успешно клонирован.",
     "cosyvoiceCloneSaveFailed": "Не удалось клонировать голос.",

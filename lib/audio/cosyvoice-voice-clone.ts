@@ -244,9 +244,21 @@ function resolveConfig(config: CosyVoiceConfig): {
   return { apiKey, baseUrl, targetModel, publicOnly: config.publicOnly, managed: config.managed };
 }
 
+/**
+ * Join the configured API root with a service path.
+ *
+ * ⚠️ Bailian's console offers the endpoint as an OpenAI-compatible URL
+ * (`https://<host>/compatible-mode/v1`) — that is the value a user naturally
+ * copies and pastes. The native DashScope root on the SAME host is `/api/v1`,
+ * and the speech endpoints exist only there, so pasting the copied value
+ * verbatim produced a bare 404 with no body (observed 2026-10-11). Accept both
+ * spellings by mapping the compatible path onto the native one.
+ */
 function endpoint(baseUrl: URL, path: string): URL {
   const normalized = new URL(baseUrl);
-  const basePath = normalized.pathname.replace(/\/$/u, '');
+  const basePath = normalized.pathname
+    .replace(/\/+$/u, '')
+    .replace(/\/compatible-mode\/v1$/u, '/api/v1');
   const suffix =
     basePath.endsWith('/api/v1') && path.startsWith('/api/v1/')
       ? path.slice('/api/v1'.length)
@@ -258,41 +270,41 @@ function endpoint(baseUrl: URL, path: string): URL {
 }
 
 /**
- * The provider-visible voice name: `<prefix>_<audioHash8>`, ASCII-only.
+ * The provider-visible voice name: `<name><audioHash4>`, letters+digits only.
  *
  * CosyVoice derives the returned `voice_id` from `prefix`, so it is the only
  * human-recognisable part of a cloned voice in the provider console.
  *
- * ⚠️ CosyVoice additionally constrains `prefix` to 10 characters and rejects a
- * leading digit, so the hash cannot simply be appended without overflowing the
- * budget — the prefix is shortened to make room for it.
+ * ⚠️ The `prefix` grammar is stricter than the Qwen line's: **letters and
+ * digits ONLY, always starting with a letter**. The live endpoint rejects an
+ * underscore outright with
+ * `InvalidParameter | prefix should be english letter and number`
+ * (observed 2026-10-11), so the `name_hash` shape used for Qwen is illegal
+ * here — the audio digest is appended as bare hex instead.
  *
  * ⚠️ A fully non-ASCII name (e.g. `窦老师`) folds to an EMPTY string under the
- * `[^a-z0-9]` rule, collapsing every such voice to the bare prefix `v` —
- * indistinguishable in the console. We keep a short deterministic `u<hash>`
- * prefix derived from the ORIGINAL name so different Chinese names stay
- * distinguishable while remaining ASCII and stable for the same (name, audio).
+ * letters/digits rule, collapsing every such voice to the same id —
+ * indistinguishable in the console. We anchor such names with `u<nameHash>` so
+ * different Chinese names stay distinct while remaining ASCII and stable.
+ *
+ * Length stays within the endpoint's 10-character prefix budget.
  */
 export function preferredVoiceName(name: string, audio: Uint8Array): string {
-  // Imported lazily-shaped: the hash must cover the exact bytes we send, so a
-  // stable digest of the audio is what makes the id idempotent per clip.
+  // The digest covers the exact bytes we send, which is what makes the id
+  // idempotent per clip: same name + same audio ⇒ same id.
   const digest = hashAudio(audio);
-  let prefix = name
+  let letters = name
     .normalize('NFKD')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, '_')
-    .replace(/^_+|_+$/gu, '')
+    .replace(/[^a-z0-9]+/gu, '') // no separators: the endpoint refuses them
     .slice(0, 6);
-  if (/^[0-9]/u.test(prefix)) prefix = `v${prefix.match(/^[0-9]+/u)?.[0] || ''}`.slice(0, 6);
-  else if (!/^[a-z]/u.test(prefix)) {
-    const nameDigest = hashName(name);
-    prefix = `u${nameDigest}`;
+  if (!/^[a-z]/u.test(letters)) {
+    // Either it starts with a digit, or the name had no ASCII letters at all.
+    // Anchor with a letter plus a short name hash so distinct names do not
+    // collide on one id.
+    letters = `u${hashName(name)}`.slice(0, 5);
   }
-  // CosyVoice: prefix <= 10 chars, letters/digits/underscore, must start with a
-  // letter. Keep 2 hex chars of the audio digest so `窦老师_a1` and `刘老师_b2`
-  // never collide on the same name.
-  const head = prefix.slice(0, 6);
-  return `${head}_${digest.slice(0, 4)}`.slice(0, 11);
+  return `${letters}${digest.slice(0, 4)}`.slice(0, 10);
 }
 
 function hashAudio(audio: Uint8Array): string {
@@ -399,8 +411,25 @@ async function postJson(
     try {
       parsed = (await response.json()) as CosyVoiceResponse;
     } catch {
-      if (!response.ok) throw new CosyVoiceError('COSYVOICE_HTTP_ERROR', response.status);
-      throw new CosyVoiceError('COSYVOICE_RESPONSE_JSON_INVALID', 502);
+      // A non-JSON body (an HTML 404 page, a gateway error) still has to say
+      // which call it was, or the operator log cannot tell enrollment from
+      // synthesis.
+      if (!response.ok) {
+        throw new CosyVoiceError(
+          'COSYVOICE_HTTP_ERROR',
+          response.status,
+          undefined,
+          undefined,
+          operation,
+        );
+      }
+      throw new CosyVoiceError(
+        'COSYVOICE_RESPONSE_JSON_INVALID',
+        502,
+        undefined,
+        undefined,
+        operation,
+      );
     }
     if (!response.ok || (parsed.code !== undefined && !parsed.output)) {
       const vendorCode = typeof parsed.code === 'string' ? parsed.code : undefined;

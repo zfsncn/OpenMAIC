@@ -29,6 +29,7 @@ import {
   TTS_PROVIDERS,
   DEFAULT_TTS_VOICES,
   ignoresTTSRate,
+  isCosyVoiceCloneVoice,
   resolveTTSModelForVoice,
   getManuallySelectableTTSModels,
 } from '@/lib/audio/constants';
@@ -163,6 +164,15 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   const handleTestTTS = async () => {
     if (!testText.trim()) return;
+
+    // A clone-only provider has nothing to speak until a voice is enrolled, and
+    // the sentinel is not a voice the engine knows. Asking anyway comes back as
+    // a cryptic engine 418, so answer the real question instead.
+    if (selectedProviderId === 'cosyvoice-tts' && !isCosyVoiceCloneVoice(effectiveVoice)) {
+      setTestStatus('error');
+      setTestMessage(t('settings.cosyvoiceTestRequiresVoice'));
+      return;
+    }
 
     setTestStatus('testing');
     setTestMessage('');

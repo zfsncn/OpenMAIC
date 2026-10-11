@@ -1532,6 +1532,7 @@
     "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
     "cosyvoiceCloneVoicesTitle": "الأصوات المستنسخة من CosyVoice",
     "cosyvoiceCloneRefAudioHint": "قم بتحميل أو تسجيل مقطع MP3 بصوت حقيقي (يُنصح بـ 10–30 ثانية). يتم التحقق من العينة عبر التعرف على الكلام في الخادم، ويتم رفض النغمات الصرفة أو الصمت. لا حاجة إلى نص مكتوب.",
+    "cosyvoiceTestRequiresVoice": "أضف صوتًا مستنسخًا أولًا — هذه الخدمة تتحدث فقط بالأصوات التي تستنسخها.",
     "cosyvoiceCloneUploadShort": "تحميل MP3",
     "cosyvoiceCloneSaved": "تم استنساخ الصوت بنجاح.",
     "cosyvoiceCloneSaveFailed": "فشل استنساخ الصوت.",

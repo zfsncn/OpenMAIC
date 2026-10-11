@@ -1532,6 +1532,7 @@
     "qwenCloneRefAudioHint": "Use a clean 1–60 second voice sample. A 10–20 second sample is recommended; audio is converted to 24 kHz mono PCM WAV.",
     "cosyvoiceCloneVoicesTitle": "CosyVoice Cloned Voices",
     "cosyvoiceCloneRefAudioHint": "Upload or record a real-speech MP3 clip (10–30 s recommended). The sample is verified by speech recognition on the server, so pure tones or silence are rejected. No transcript is needed.",
+    "cosyvoiceTestRequiresVoice": "Add a cloned voice first — this provider can only speak voices you enroll.",
     "cosyvoiceCloneUploadShort": "Upload MP3",
     "cosyvoiceCloneSaved": "Voice cloned successfully.",
     "cosyvoiceCloneSaveFailed": "Voice cloning failed.",

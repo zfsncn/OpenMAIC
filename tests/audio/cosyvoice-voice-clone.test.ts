@@ -25,7 +25,11 @@ import {
   cosyVoiceRegistrationAdapter,
 } from '@/lib/audio/cosyvoice-registration';
 import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
-import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import {
+  getEnabledProvidersWithVoices,
+  resolveAgentVoice,
+  resolveNarratorVoiceForGeneration,
+} from '@/lib/audio/voice-resolver';
 import { generateTTS } from '@/lib/audio/tts-providers';
 
 // Same transport double as the Qwen clone tests: the helpers go through
@@ -114,17 +118,64 @@ describe('CosyVoice voice cloning', () => {
     expect(body.input.text).toBeUndefined();
     expect(body.input.audio).toBeUndefined();
     expect(body.input.url).toMatch(new RegExp(`^data:${INLINE_AUDIO_MIME};base64,`));
-    expect(body.input.prefix).toMatch(/^[a-z][a-z0-9_]{0,10}$/u);
+    expect(body.input.prefix).toMatch(/^[a-z][a-z0-9]{0,9}$/u);
   });
 
-  it('produces a stable, cosyvoice-legal prefix (<=11 chars, letter-initial)', () => {
+  it('produces a stable, cosyvoice-legal prefix (letters+digits only, <=10 chars)', () => {
     const first = preferredVoiceName('窦老师', mp3Bytes(64));
     const second = preferredVoiceName('窦老师', mp3Bytes(64));
     expect(first).toBe(second);
-    expect(first).toMatch(/^[a-z][a-z0-9_]*$/u);
-    expect(first.length).toBeLessThanOrEqual(11);
+    // The endpoint rejects separators outright:
+    // `InvalidParameter | prefix should be english letter and number`.
+    expect(first).toMatch(/^[a-z][a-z0-9]*$/u);
+    expect(first.length).toBeLessThanOrEqual(10);
     // Two Chinese names must not collapse to the same id.
     expect(preferredVoiceName('刘老师', mp3Bytes(64))).not.toBe(first);
+  });
+
+  it('never emits an underscore or a digit-leading prefix', () => {
+    for (const name of ['A Name With Spaces', '窦老师', '123abc', '___', 'Ünïcodé']) {
+      const id = preferredVoiceName(name, mp3Bytes(32));
+      expect(id).toMatch(/^[a-z][a-z0-9]*$/u);
+      expect(id).not.toContain('_');
+      expect(id.length).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('maps an OpenAI-compatible base URL onto the native api root', async () => {
+    // The console's copy button yields `.../compatible-mode/v1`; the speech
+    // endpoints live under `/api/v1` on the same host, so the copied value must
+    // still resolve (a verbatim paste used to 404 with an empty body).
+    const fetchSpy = fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ output: { voice_id: 'v' } }), { status: 200 }),
+    );
+    await registerCosyVoice(
+      { ...CONFIG, baseUrl: 'https://llm-ws.example.com/compatible-mode/v1' },
+      { name: 'Teacher', audio: mp3Bytes() },
+    );
+    expect(String(fetchSpy.mock.calls[0][0])).toBe(
+      'https://llm-ws.example.com/api/v1/services/audio/tts/customization',
+    );
+  });
+
+  it('keeps a bare-host base URL working (no api/v1 suffix at all)', async () => {
+    const fetchSpy = fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ output: { voice_id: 'v' } }), { status: 200 }),
+    );
+    await registerCosyVoice(
+      { ...CONFIG, baseUrl: 'https://llm-ws.example.com' },
+      { name: 'Teacher', audio: mp3Bytes() },
+    );
+    expect(String(fetchSpy.mock.calls[0][0])).toBe(
+      'https://llm-ws.example.com/api/v1/services/audio/tts/customization',
+    );
+  });
+
+  it('labels a non-JSON error response with the operation that failed', async () => {
+    fetchMock.mockResolvedValue(new Response('<html>404</html>', { status: 404 }));
+    await expect(registerCosyVoice(CONFIG, { name: 'x', audio: mp3Bytes() })).rejects.toMatchObject(
+      { code: 'COSYVOICE_HTTP_ERROR', httpStatus: 404, operation: 'enrollment' },
+    );
   });
 
   it('sends a non-ASCII name to a hashed prefix instead of collapsing to "v"', () => {
@@ -330,5 +381,48 @@ describe('CosyVoice voice cloning', () => {
     // The sentinel means "nothing enrolled yet", not a speakable voice.
     expect(isCosyVoiceCloneVoice(COSYVOICE_NO_SYSTEM_VOICE)).toBe(false);
     expect(ignoresTTSRate('cosyvoice-tts', 'cosyvoice-v3.5-plus-x-1')).toBe(true);
+  });
+
+  it('refuses to treat the no-voice sentinel as a bindable voice', () => {
+    // Passing it through would reach the engine as an unknown speaker (418).
+    expect(
+      resolveNarratorVoiceForGeneration('cosyvoice-tts', COSYVOICE_NO_SYSTEM_VOICE, {
+        baseUrl: '',
+        apiKey: 'sk-cosy',
+        enabled: true,
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveAgentVoice(
+        { id: 'teacher', name: 'T', voiceConfig: undefined } as never,
+        0,
+        [
+          {
+            providerId: 'cosyvoice-tts',
+            providerName: 'CosyVoice',
+            voices: [],
+            modelGroups: [],
+          },
+        ],
+        {
+          teacher: {
+            providerId: 'cosyvoice-tts',
+            voiceId: COSYVOICE_NO_SYSTEM_VOICE,
+          },
+        },
+      ),
+    ).toBeNull();
+    // A real enrolled id still binds, and carries the clone model.
+    expect(
+      resolveNarratorVoiceForGeneration('cosyvoice-tts', 'cosyvoice-v3.5-plus-x-1', {
+        baseUrl: '',
+        apiKey: 'sk-cosy',
+        enabled: true,
+      }),
+    ).toEqual({
+      providerId: 'cosyvoice-tts',
+      voiceId: 'cosyvoice-v3.5-plus-x-1',
+      modelId: COSYVOICE_TTS_VOICE_CLONE_MODEL,
+    });
   });
 });
