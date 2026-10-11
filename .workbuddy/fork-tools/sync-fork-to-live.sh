@@ -65,7 +65,15 @@ PY
 }
 
 MODE="${1:-dry-run}"
-TMP="$(mktemp -d)"
+# ⚠️ Why not `mktemp -d`: on Git Bash it returns a MIXED path
+# ("C:\Users\...\Temp/tmp.XXXX" — drive prefix + forward slashes), and this
+# session's safe-delete guard rejects ANY drive-prefixed `rm -rf` with
+# `SAFE_DELETE_INVALID_PATH: embedded drive prefix`. That made the cleanup trap
+# fail and aborted the pipeline right AFTER a successful sync (observed
+# 2026-10-11). A pure POSIX /tmp path has no drive prefix and deletes cleanly,
+# so pin the temp dir there explicitly.
+TMP="/tmp/openmaic-sync-$$-$(date +%s)"
+mkdir -p "$TMP" || { echo "无法创建临时目录 $TMP" >&2; exit 1; }
 trap 'rm -rf "$TMP"' EXIT
 
 echo ">>> [1/4] 同步前差异"
