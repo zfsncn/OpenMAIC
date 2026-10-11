@@ -114,24 +114,61 @@ pnpm exec vitest run --testTimeout=30000 <你改动相关的测试文件>
 # ③ 提交（一个功能点一个 commit）
 git add -A && git commit -m "feat(模块): 干了什么"
 
-# ④ 同步到现场（见 §3.1 的 sync 脚本）→ 构建镜像 → 3002 验收
-bash /d/OpenMAIC/.workbuddy/fork-tools/sync-fork-to-live.sh
-cd /d/OpenMAIC && docker build -t openmaic-new:latest . && bash .workbuddy/deploy/start-3002.sh --run
+# ④ 同步 → 门控 → 构建 → 部署 → 验收（一条命令，推荐）
+bash .workbuddy/fork-tools/pipeline.sh --apply
 
 # ⑤ 推云端（随手）
 git push
 ```
 
+> **推荐用 `pipeline.sh --apply` 代替手工串 ④**。它把「同步 → tsc 门控 → docker build
+> → 重建容器 → 验收」串成一条命令，并自带护栏与回滚标签。手工分步时任何一步漏掉都容易出错。
+>
+> ```bash
+> bash .workbuddy/fork-tools/pipeline.sh              # dry-run：只看将要发生什么，不动任何东西
+> bash .workbuddy/fork-tools/pipeline.sh --apply      # 真跑全流程
+> bash .workbuddy/fork-tools/pipeline.sh --apply --prune        # 同步时删除 fork 已删的源码
+> bash .workbuddy/fork-tools/pipeline.sh --apply --no-build     # 只同步+部署，沿用现役镜像
+> bash .workbuddy/fork-tools/pipeline.sh --apply --tag my-标签  # 自定义回滚标签后缀
+> ```
+>
+> **四道护栏**（任一触发即中止，不会把半成品带进镜像）：
+> 1. 源码树根出现 `.env.local` ⇒ 拒绝执行（会被打进镜像层，泄漏密钥）
+> 2. fork 工作树有未提交改动 ⇒ 拒绝同步（现场会拿到半成品）
+> 3. tsc 有错误 ⇒ 中止，不 build、不动容器
+> 4. 验收含「容器镜像 == 刚构建镜像」断言 + 查库确认数据未丢、数据与流水线开始前一致
+>
+> **自动回滚标签**：每次真跑前自动 `docker tag` 现役镜像为 `openmaic-new:pre-<tag>`，
+> 回滚：`docker tag openmaic-new:pre-<tag> openmaic-new:latest && bash .workbuddy/deploy/start-3002.sh --run`
+>
+> ⚠️ **流水线只改代码、不改数据**，也不碰 3003/3006。DB 变更须单独授权并先`pg_dump`。
+
 ### 3.1 fork → 现场同步脚本（已备好）
 
+>脚本的 Git 事实源在 **fork 仓**（`.workbuddy/fork-tools/`，已纳入版本管理）；
+> `D:\OpenMAIC\.workbuddy\fork-tools\` 是运行时副本，改动后需两边同步。
+
 ```bash
-bash /d/OpenMAIC/.workbuddy/fork-tools/sync-fork-to-live.sh          # 先看差异（dry-run）
-bash /d/OpenMAIC/.workbuddy/fork-tools/sync-fork-to-live.sh --apply  # 真正同步
+# 从 fork 目录（推荐，事实源）
+bash .workbuddy/fork-tools/sync-fork-to-live.sh            # 先看差异（dry-run）
+bash .workbuddy/fork-tools/sync-fork-to-live.sh --apply    # 真正同步
+bash .workbuddy/fork-tools/sync-fork-to-live.sh --apply-prune  # 同步并删除 fork 已删的源码
 ```
 
 原理：robocopy 镜像（排除 node_modules/.next/.workbuddy/data/dist 等运行态），
 **同步后自动跑"漂移校验"**——md5 全量比对两树，报告"仅现场/仅 fork/内容不同"三个数，
 非 0 会红色告警。**现场树里只有构建产物和运行数据是合法差异**，其余都该为 0。
+
+**为什么 `--apply` 和 `--apply-prune` 要分开**：`--apply` 只做覆盖+新增，
+**不删除**任何文件（安全，但 fork 里删掉的源码会残留在现场、导致漂移校验报「仅现场>0」）。
+确认删除是有意为之后，用 `--apply-prune` 才会真正删。
+
+**已知坑（都已修复，勿回退）**：
+- `node_modules` 必须用**目录名**排除（不限层级）。本仓库是 pnpm workspace，
+  嵌套依赖有 2500+ 个；只排顶层会让 robocopy 遍历到被占用的 `.js`，
+  每个文件空等 30 秒——单文件就能把整轮同步拖到 12 分钟（2026-10-11 实测）。
+- robocopy 必须取真实返回码判断成败：`robocopy ... || rc=$?`。
+  写成 `|| true; echo $?` 会让 `$?`恒为 0，失败被静默吞掉。
 
 ### 工作流 B：改在现场，定期回灌 fork
 
