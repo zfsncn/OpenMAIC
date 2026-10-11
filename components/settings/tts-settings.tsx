@@ -86,6 +86,9 @@ interface TTSSettingsProps {
 
 export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const { t, locale } = useI18n();
+  // Enrolled CosyVoice clones, so the "test TTS" guard can tell "nothing
+  // cloned yet" apart from "cloned but not selected".
+  const { profiles: cosyProfiles } = useCosyVoiceProfiles();
 
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
@@ -167,10 +170,17 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
     // A clone-only provider has nothing to speak until a voice is enrolled, and
     // the sentinel is not a voice the engine knows. Asking anyway comes back as
-    // a cryptic engine 418, so answer the real question instead.
+    // a cryptic engine 418, so answer the real question instead — and answer
+    // the RIGHT question: an enrolled-but-not-selected voice needs "select it",
+    // not "clone one".
     if (selectedProviderId === 'cosyvoice-tts' && !isCosyVoiceCloneVoice(effectiveVoice)) {
       setTestStatus('error');
-      setTestMessage(t('settings.cosyvoiceTestRequiresVoice'));
+      setTestMessage(
+        // useCosyVoiceProfiles already scopes rows to this provider.
+        cosyProfiles.length > 0
+          ? t('settings.cosyvoiceTestSelectVoice')
+          : t('settings.cosyvoiceTestRequiresVoice'),
+      );
       return;
     }
 
@@ -1500,6 +1510,7 @@ function CosyVoiceCloneManager() {
   const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
+  const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
   const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
   const { previewing, startPreview, stopPreview } = useTTSPreview();
@@ -1659,7 +1670,12 @@ function CosyVoiceCloneManager() {
           ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || undefined,
         },
       );
-      if (ttsProviderId === 'cosyvoice-tts') setTTSVoice(voiceId);
+      // A fresh clone is the user's obvious next speaker: adopt it globally.
+      // Order matters — setTTSProvider resets the voice to the provider's
+      // default (the no-voice sentinel for this clone-only provider), so the
+      // voice pick must land AFTER the provider switch, or it gets clobbered.
+      if (ttsProviderId !== 'cosyvoice-tts') setTTSProvider('cosyvoice-tts');
+      setTTSVoice(voiceId);
       setName('');
       setReferenceFile(null);
       toast.success(t('settings.cosyvoiceCloneSaved'));
@@ -1746,6 +1762,12 @@ function CosyVoiceCloneManager() {
                     badge={t('settings.voxcpmClone')}
                     detail={profile.referenceAudioName || profile.id}
                     kind="clone"
+                    selected={ttsProviderId === 'cosyvoice-tts' && ttsVoice === profile.id}
+                    onSelect={() => {
+                      if (ttsProviderId !== 'cosyvoice-tts') setTTSProvider('cosyvoice-tts');
+                      setTTSVoice(profile.id);
+                      toast.success(t('settings.cloneVoiceActivated'));
+                    }}
                     previewing={previewingVoiceId === profile.id}
                     onPreview={() => handlePreview(profile.id)}
                     onDelete={() => handleDelete(profile.id)}
@@ -1836,6 +1858,8 @@ function VoiceProfileRow({
   previewing,
   previewDisabled,
   previewDisabledTitle,
+  onSelect,
+  selected,
   onPreview,
   onDelete,
 }: {
@@ -1855,6 +1879,10 @@ function VoiceProfileRow({
   previewDisabled?: boolean;
   /** Hover text explaining WHY preview is unavailable. */
   previewDisabledTitle?: string;
+  /** Offer "use this voice" — sets it as the active global voice. */
+  onSelect?: () => void;
+  /** Whether this row is the currently-selected global voice. */
+  selected?: boolean;
   onPreview?: () => void;
   onDelete?: () => void | Promise<void>;
 }) {
@@ -1901,6 +1929,23 @@ function VoiceProfileRow({
         </div>
         <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
       </div>
+      {onSelect && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onSelect()}
+          aria-label={t('settings.cloneUseAsActive')}
+          title={t('settings.cloneUseAsActive')}
+          className={cn(
+            'h-8 w-8 opacity-70 group-hover:opacity-100',
+            selected
+              ? 'text-violet-600 dark:text-violet-400'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+        </Button>
+      )}
       {onPreview && (
         <Button
           variant="ghost"
