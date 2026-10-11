@@ -1522,6 +1522,7 @@
     "cosyvoiceCloneSaveFailed": "音色克隆失敗。",
     "cosyvoiceCloneUnsupported": "目前瀏覽器不支援錄音。",
     "qwenCloneModelRetired": "聲音復刻合成模型（qwen3-tts-vc-2026-01-22）已於 2026 年 10 月 10 日被服務商下線，已克隆的音色無法繼續合成。請切換到 CosyVoice TTS 並重新上傳參考音訊進行克隆。",
+    "qwenClonePreviewDisabled": "該音色無法試聽：其合成模型已下線。請切換到 CosyVoice TTS 重新複製。",
     "qwenCloneSaved": "Qwen 克隆音色已註冊並儲存",
     "qwenCloneSaveFailed": "Qwen 克隆音色註冊失敗",
     "qwenCloneUnsupported": "此瀏覽器不支援錄音，請改為上傳音訊檔案。",

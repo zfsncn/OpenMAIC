@@ -1537,6 +1537,7 @@
     "cosyvoiceCloneSaveFailed": "Error al clonar la voz.",
     "cosyvoiceCloneUnsupported": "Este navegador no admite la grabación de audio.",
     "qwenCloneModelRetired": "El modelo de síntesis de clonación de voz (qwen3-tts-vc-2026-01-22) fue retirado por el proveedor el 10/10/2026. Las voces clonadas existentes ya no se pueden sintetizar. Cambie a CosyVoice TTS y vuelva a subir su audio de referencia.",
+    "qwenClonePreviewDisabled": "Esta voz no se puede previsualizar: su modelo de síntesis fue retirado. Cambie a CosyVoice TTS y vuelva a clonar.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",

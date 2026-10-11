@@ -29,7 +29,6 @@ import {
   TTS_PROVIDERS,
   DEFAULT_TTS_VOICES,
   ignoresTTSRate,
-  QWEN_TTS_VOICE_CLONE_MODEL,
   resolveTTSModelForVoice,
   getManuallySelectableTTSModels,
 } from '@/lib/audio/constants';
@@ -1164,11 +1163,9 @@ function QwenVoiceCloneManager() {
   const { profiles, addCloneVoice, deleteVoice } = useQwenVoiceProfiles();
   const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
-  const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
-  const { previewing, startPreview, stopPreview } = useTTSPreview();
   const providerConfig = ttsProvidersConfig['qwen-tts'];
 
   const [name, setName] = useState('');
@@ -1177,7 +1174,6 @@ function QwenVoiceCloneManager() {
   const [saving, setSaving] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -1291,10 +1287,6 @@ function QwenVoiceCloneManager() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!previewing) setPreviewingVoiceId(null);
-  }, [previewing]);
-
   const handleSave = async () => {
     if (!name.trim() || !refText.trim() || !referenceFile) return;
     setSaving(true);
@@ -1318,27 +1310,12 @@ function QwenVoiceCloneManager() {
     }
   };
 
-  const handlePreview = async (voiceId: string) => {
-    if (previewingVoiceId === voiceId) {
-      stopPreview();
-      setPreviewingVoiceId(null);
-      return;
-    }
-    setPreviewingVoiceId(voiceId);
-    try {
-      await startPreview({
-        text: t('settings.ttsTestTextDefault'),
-        providerId: 'qwen-tts',
-        modelId: QWEN_TTS_VOICE_CLONE_MODEL,
-        voice: voiceId,
-        speed: ttsSpeed,
-        apiKey: providerConfig?.apiKey,
-        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
-      });
-    } catch (error) {
-      setPreviewingVoiceId(null);
-      toast.error(error instanceof Error ? error.message : t('settings.qwenCloneSaveFailed'));
-    }
+  // Every voice in this panel was enrolled against the retired VC model, so a
+  // synthesis request can only ever come back as a provider rejection. The
+  // preview button is disabled; this handler is the belt-and-braces path that
+  // explains the situation instead of surfacing a raw vendor error.
+  const handlePreview = () => {
+    toast.error(t('settings.qwenClonePreviewDisabled'));
   };
 
   const handleDelete = async (voiceId: string) => {
@@ -1401,8 +1378,9 @@ function QwenVoiceCloneManager() {
                     badge={t('settings.voxcpmClone')}
                     detail={profile.referenceAudioName || profile.id}
                     kind="clone"
-                    previewing={previewingVoiceId === profile.id}
-                    onPreview={() => handlePreview(profile.id)}
+                    previewDisabled
+                    previewDisabledTitle={t('settings.qwenClonePreviewDisabled')}
+                    onPreview={handlePreview}
                     onDelete={() => handleDelete(profile.id)}
                   />
                 ))
@@ -1827,6 +1805,8 @@ function VoiceProfileRow({
   kind = 'prompt',
   muted,
   previewing,
+  previewDisabled,
+  previewDisabledTitle,
   onPreview,
   onDelete,
 }: {
@@ -1838,6 +1818,14 @@ function VoiceProfileRow({
   kind?: 'auto' | 'prompt' | 'clone';
   muted?: boolean;
   previewing?: boolean;
+  /**
+   * Disable preview when the voice cannot possibly synthesize (e.g. its model
+   * was retired). Leaving such a button live turns a known-impossible action
+   * into a scary provider error toast, which reads as a product bug.
+   */
+  previewDisabled?: boolean;
+  /** Hover text explaining WHY preview is unavailable. */
+  previewDisabledTitle?: string;
   onPreview?: () => void;
   onDelete?: () => void | Promise<void>;
 }) {
@@ -1889,8 +1877,14 @@ function VoiceProfileRow({
           variant="ghost"
           size="icon"
           onClick={() => onPreview()}
+          disabled={previewDisabled}
+          title={previewDisabled ? previewDisabledTitle : undefined}
           aria-label={
-            previewing ? t('settings.voxcpmStopPreview') : t('settings.voxcpmPreviewVoice')
+            previewDisabled
+              ? previewDisabledTitle || t('settings.voxcpmPreviewVoice')
+              : previewing
+                ? t('settings.voxcpmStopPreview')
+                : t('settings.voxcpmPreviewVoice')
           }
           className="h-8 w-8 text-muted-foreground opacity-70 hover:text-foreground group-hover:opacity-100"
         >

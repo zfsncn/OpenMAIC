@@ -1537,6 +1537,7 @@
     "cosyvoiceCloneSaveFailed": "Nhân bản giọng nói thất bại.",
     "cosyvoiceCloneUnsupported": "Trình duyệt này không hỗ trợ ghi âm.",
     "qwenCloneModelRetired": "Mô hình tổng hợp nhân bản giọng nói (qwen3-tts-vc-2026-01-22) đã bị nhà cung cấp ngừng hoạt động từ ngày 10/10/2026. Các giọng đã nhân bản không thể tổng hợp nữa. Hãy chuyển sang CosyVoice TTS và tải lại âm thanh tham chiếu.",
+    "qwenClonePreviewDisabled": "Không thể nghe thử giọng này: mô hình tổng hợp đã ngừng hoạt động. Hãy chuyển sang CosyVoice TTS và nhân bản lại.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",

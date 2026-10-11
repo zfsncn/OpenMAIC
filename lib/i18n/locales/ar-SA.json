@@ -1537,6 +1537,7 @@
     "cosyvoiceCloneSaveFailed": "فشل استنساخ الصوت.",
     "cosyvoiceCloneUnsupported": "هذا المتصفح لا يدعم تسجيل الصوت.",
     "qwenCloneModelRetired": "تم إيقاف نموذج تخليق استنساخ الصوت (qwen3-tts-vc-2026-01-22) من قبل المزود في 10 أكتوبر 2026. لا يمكن تخليق الأصوات المستنسخة الحالية. انتقل إلى CosyVoice TTS وأعد تحميل الصوت المرجعي.",
+    "qwenClonePreviewDisabled": "لا يمكن معاينة هذا الصوت: تم إيقاف نموذج التخليق الخاص به. انتقل إلى CosyVoice TTS واستنسخ مرة أخرى.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",

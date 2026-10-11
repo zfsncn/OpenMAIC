@@ -1537,6 +1537,7 @@
     "cosyvoiceCloneSaveFailed": "音声のクローンに失敗しました。",
     "cosyvoiceCloneUnsupported": "このブラウザは録音に対応していません。",
     "qwenCloneModelRetired": "音声クローンの合成モデル（qwen3-tts-vc-2026-01-22）は 2026 年 10 月 10 日にプロバイダーによって提供終了しました。既存のクローン音声は合成できません。CosyVoice TTS に切り替え、参照音声を再アップロードしてクローンし直してください。",
+    "qwenClonePreviewDisabled": "この音声は試聴できません。合成モデルが提供終了となりました。CosyVoice TTS に切り替えて再クローンしてください。",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
