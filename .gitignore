@@ -93,3 +93,9 @@ e2e/__screenshots-619/
 
 # rollup build-time temp configs (timestamped copies of rollup.config.mjs)
 packages/*/rollup.config-[0-9]*.cjs
+
+# WorkBuddy 运行态目录：只有 fork-tools/ 下的流水线脚本纳入版本管理，
+# 其余（secrets 密钥 / memory 记忆 / rollback 锚点 / deploy 现役配置）只在现场有意义。
+.workbuddy/*
+!.workbuddy/fork-tools/
+!.workbuddy/fork-tools/*.sh
