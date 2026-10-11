@@ -1534,6 +1534,7 @@
     "cosyvoiceCloneRefAudioHint": "Importez ou enregistrez un extrait MP3 de vraie parole (10 à 30 s recommandé). L'échantillon est vérifié par reconnaissance vocale côté serveur ; les tons purs ou le silence sont refusés. Aucune transcription requise.",
     "cosyvoiceTestRequiresVoice": "Ajoutez d'abord une voix clonée — ce service ne peut lire que les voix que vous clonez.",
     "cloneApiKeyRequired": "Saisissez d'abord la clé API de ce service ci-dessus.",
+    "cloneAudioEmpty": "Ce fichier audio est vide (0 octet). S'il est dans un dossier synchronisé (OneDrive etc.), téléchargez-le d'abord.",
     "cosyvoiceCloneUploadShort": "Importer un MP3",
     "cosyvoiceCloneSaved": "Voix clonée avec succès.",
     "cosyvoiceCloneSaveFailed": "Échec du clonage de la voix.",

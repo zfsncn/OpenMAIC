@@ -85,6 +85,7 @@ export type CosyVoiceErrorCode =
   | 'COSYVOICE_AUDIO_TOO_LARGE'
   | 'COSYVOICE_AUDIO_EMPTY'
   | 'COSYVOICE_AUDIO_TOO_LONG'
+  | 'COSYVOICE_REFERENCE_AUDIO_EMPTY'
   | 'COSYVOICE_VOICE_NOT_FOUND'
   | 'COSYVOICE_VOICE_NOT_READY'
   | 'COSYVOICE_BOOTSTRAP_UNSUPPORTED';
@@ -136,6 +137,8 @@ export type CosyVoiceOperation = 'enrollment' | 'synthesis';
 
 const ERROR_MESSAGES: Record<CosyVoiceErrorCode, string> = {
   COSYVOICE_CONFIG_MISSING: 'CosyVoice is missing required configuration.',
+  COSYVOICE_REFERENCE_AUDIO_EMPTY:
+    'The reference audio arrived empty — re-select the file (it may be 0 bytes).',
   COSYVOICE_ENDPOINT_INVALID: 'The configured CosyVoice endpoint is invalid.',
   COSYVOICE_HTTP_ERROR: 'The voice service rejected the request.',
   COSYVOICE_TIMEOUT: 'The voice service request timed out.',

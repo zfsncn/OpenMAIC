@@ -131,7 +131,16 @@ async function registerVoice(
   const pending = (async () => {
     const audio = decodeBase64(params.referenceAudioBase64);
     if (!audio.byteLength) {
-      throw new CosyVoiceError('COSYVOICE_CONFIG_MISSING', 400);
+      // The upload never carried bytes (empty/0-size file, or a client that
+      // read the File wrong). Naming the field here is what makes the error
+      // actionable — the generic CONFIG_MISSING read as a missing key.
+      throw new CosyVoiceError(
+        'COSYVOICE_REFERENCE_AUDIO_EMPTY',
+        400,
+        undefined,
+        'the reference audio arrived empty — re-select the file',
+        'enrollment',
+      );
     }
     const registrationCfg: VoiceRegistrationConfig = {
       ...cfg,

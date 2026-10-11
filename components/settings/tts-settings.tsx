@@ -1533,6 +1533,14 @@ function CosyVoiceCloneManager() {
       setReferenceFile(null);
       return;
     }
+    // A cloud-sync placeholder (OneDrive "files on demand") reads as 0 bytes in
+    // the browser; fail at selection, where the fix is visible, not after
+    // upload with an opaque server error.
+    if (file.size === 0) {
+      setReferenceFile(null);
+      toast.error(t('settings.cloneAudioEmpty'));
+      return;
+    }
     try {
       await validateVoxCPMReferenceAudio(file);
       setReferenceFile(file);
