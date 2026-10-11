@@ -1533,6 +1533,7 @@
     "cosyvoiceCloneVoicesTitle": "Voces clonadas de CosyVoice",
     "cosyvoiceCloneRefAudioHint": "Sube o graba un clip MP3 de voz real (se recomiendan 10–30 s). La muestra se verifica con reconocimiento de voz en el servidor; los tonos puros o el silencio se rechazan. No se requiere transcripción.",
     "cosyvoiceTestRequiresVoice": "Agregue primero una voz clonada: este servicio solo puede usar las voces que usted clone.",
+    "cloneApiKeyRequired": "Introduzca primero la clave API de este servicio arriba.",
     "cosyvoiceCloneUploadShort": "Subir MP3",
     "cosyvoiceCloneSaved": "Voz clonada correctamente.",
     "cosyvoiceCloneSaveFailed": "Error al clonar la voz.",

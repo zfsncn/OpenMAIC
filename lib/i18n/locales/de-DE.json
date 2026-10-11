@@ -1533,6 +1533,7 @@
     "cosyvoiceCloneVoicesTitle": "CosyVoice Klone-Stimmen",
     "cosyvoiceCloneRefAudioHint": "Laden Sie einen echten Sprach-MP3-Clip hoch oder nehmen Sie einen auf (10–30 s empfohlen). Die Probe wird serverseitig per Spracherkennung geprüft; reine Töne oder Stille werden abgelehnt. Kein Transkript nötig.",
     "cosyvoiceTestRequiresVoice": "Fügen Sie zuerst eine geklonte Stimme hinzu — dieser Dienst kann nur von Ihnen erstellte Stimmen sprechen.",
+    "cloneApiKeyRequired": "Tragen Sie zuerst oben den API-Schlüssel dieses Dienstes ein.",
     "cosyvoiceCloneUploadShort": "MP3 hochladen",
     "cosyvoiceCloneSaved": "Stimme erfolgreich geklont.",
     "cosyvoiceCloneSaveFailed": "Klonen der Stimme fehlgeschlagen.",

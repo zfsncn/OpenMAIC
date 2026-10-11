@@ -91,6 +91,10 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_AZURE: 'azure-tts',
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
+  // ⚠️ Without this entry the provider cannot be operated at all: an operator
+  // could set TTS_COSYVOICE_API_KEY in the environment and it would be silently
+  // ignored, leaving every enrollment dependent on a browser-side key.
+  TTS_COSYVOICE: 'cosyvoice-tts',
   TTS_VOXCPM: 'voxcpm-tts',
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',

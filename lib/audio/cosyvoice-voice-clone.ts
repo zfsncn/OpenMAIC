@@ -181,8 +181,26 @@ export function cosyVoiceErrorMessage(
   const base =
     (operation && OPERATION_MESSAGES[error.code]?.[operation]) || ERROR_MESSAGES[error.code];
   const vendor = error.vendorMessage || error.vendorCode;
-  return vendor ? `${base} (${vendor})` : base;
+  const message = vendor ? `${base} (${vendor})` : base;
+  return error.vendorCode === 'InvalidApiKey' ? `${message} ${API_KEY_HINT}` : message;
 }
+
+/**
+ * Actionable guidance for a rejected credential.
+ *
+ * Measured 2026-10-11: a workspace-scoped (`sk-ws-`) key that authenticates
+ * against a workspace host's OpenAI-compatible endpoint
+ * (`<workspace>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`, where the
+ * settings dialog reports "connection successful") is rejected with
+ * `InvalidApiKey` by the SAME host's native `/api/v1` speech endpoint. The same
+ * key against the public `dashscope.aliyuncs.com/api/v1` speech endpoint works.
+ * So the credential is fine; the host's native API root does not accept it.
+ * Name the fix instead of leaving the user with a bare 401.
+ */
+const API_KEY_HINT =
+  'The key must be a Bailian (DashScope) key whose region matches the endpoint, ' +
+  `and the speech APIs expect the native API root — try Base URL ${DEFAULT_COSYVOICE_BASE_URL} ` +
+  'if you entered a workspace host with /compatible-mode/v1.';
 
 /**
  * Vendor rejections that mean "the sample audio is unusable". The endpoint ASRs

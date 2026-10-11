@@ -1533,6 +1533,7 @@
     "cosyvoiceCloneVoicesTitle": "Giọng nói nhân bản CosyVoice",
     "cosyvoiceCloneRefAudioHint": "Tải lên hoặc ghi âm một đoạn MP3 giọng nói thật (khuyến nghị 10–30 giây). Mẫu sẽ được kiểm tra bằng nhận dạng giọng nói phía máy chủ; âm thuần hoặc im lặng sẽ bị từ chối. Không cần bản chép lời.",
     "cosyvoiceTestRequiresVoice": "Hãy thêm giọng nhân bản trước — dịch vụ này chỉ dùng được giọng do bạn nhân bản.",
+    "cloneApiKeyRequired": "Hãy nhập khóa API của dịch vụ này ở trên trước.",
     "cosyvoiceCloneUploadShort": "Tải MP3 lên",
     "cosyvoiceCloneSaved": "Nhân bản giọng nói thành công.",
     "cosyvoiceCloneSaveFailed": "Nhân bản giọng nói thất bại.",

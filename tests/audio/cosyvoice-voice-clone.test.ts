@@ -9,6 +9,7 @@ import {
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
 import {
+  cosyVoiceErrorMessage,
   cosyVoiceExists,
   CosyVoiceError,
   deleteCosyVoice,
@@ -256,6 +257,25 @@ describe('CosyVoice voice cloning', () => {
       code: 'COSYVOICE_RESPONSE_VOICE_MISSING',
       vendorMessage: 'request asr failed, http code: 400',
     });
+  });
+
+  it('appends actionable guidance when the credential itself is rejected', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ code: 'InvalidApiKey', message: 'Invalid API-key provided.' }),
+        {
+          status: 401,
+        },
+      ),
+    );
+    const error = await registerCosyVoice(CONFIG, { name: 'x', audio: mp3Bytes() }).catch(
+      (e) => e as CosyVoiceError,
+    );
+    expect(error).toBeInstanceOf(CosyVoiceError);
+    const message = cosyVoiceErrorMessage(error as CosyVoiceError, 'enrollment');
+    expect(message).toContain('Invalid API-key provided.');
+    // The hint must name the working endpoint so the user can act on it.
+    expect(message).toContain('https://dashscope.aliyuncs.com/api/v1');
   });
 
   it('synthesizes through SpeechSynthesizer and prefers the inline data field', async () => {

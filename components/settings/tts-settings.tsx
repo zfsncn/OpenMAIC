@@ -1299,6 +1299,10 @@ function QwenVoiceCloneManager() {
 
   const handleSave = async () => {
     if (!name.trim() || !refText.trim() || !referenceFile) return;
+    if (!providerConfig?.apiKey?.trim()) {
+      toast.error(t('settings.cloneApiKeyRequired'));
+      return;
+    }
     setSaving(true);
     try {
       const voiceId = await addCloneVoice(
@@ -1631,6 +1635,13 @@ function CosyVoiceCloneManager() {
 
   const handleSave = async () => {
     if (!name.trim() || !referenceFile) return;
+    // A missing key would otherwise surface as the server's opaque
+    // "missing required configuration", which names neither the field nor the
+    // provider. Say it here, where the fix is one field away.
+    if (!providerConfig?.apiKey?.trim()) {
+      toast.error(t('settings.cloneApiKeyRequired'));
+      return;
+    }
     setSaving(true);
     try {
       const voiceId = await addCloneVoice(

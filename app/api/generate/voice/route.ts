@@ -139,6 +139,17 @@ export async function POST(req: NextRequest) {
     if (!baseUrl) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'TTS base URL is required');
     }
+    // A configuration failure is otherwise indistinguishable from a vendor
+    // rejection, which cost a long round trip on 2026-10-11: record WHERE the
+    // credential came from (never the value) alongside the request.
+    if (!apiKey) {
+      log.error(
+        `Voice registration has no credential [provider=${providerId}]`,
+        `managed=${managed}`,
+        `clientKeyPresent=${Boolean(body.ttsApiKey?.trim())}`,
+        `clientBaseUrlPresent=${Boolean(clientBaseUrl)}`,
+      );
+    }
 
     const cfg: VoiceRegistrationConfig = {
       baseUrl,

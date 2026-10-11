@@ -1533,6 +1533,7 @@
     "cosyvoiceCloneVoicesTitle": "CosyVoice 클론 음성",
     "cosyvoiceCloneRefAudioHint": "실제 음성 MP3(10~30초 권장)를 업로드하거나 녹음하세요. 서버에서 음성 인식 검증을 하므로 순수 톤이나 무음은 거부됩니다. 전사 텍스트는 필요하지 않습니다.",
     "cosyvoiceTestRequiresVoice": "먼저 클론 음성을 추가하세요. 이 서비스는 복제한 음성만 사용할 수 있습니다.",
+    "cloneApiKeyRequired": "먼저 위에서 이 서비스의 API 키를 입력한 후 음성을 클론하세요.",
     "cosyvoiceCloneUploadShort": "MP3 업로드",
     "cosyvoiceCloneSaved": "음성 클론에 성공했습니다.",
     "cosyvoiceCloneSaveFailed": "음성 클론에 실패했습니다.",

@@ -1518,6 +1518,7 @@
     "cosyvoiceCloneVoicesTitle": "CosyVoice 克隆音色",
     "cosyvoiceCloneRefAudioHint": "上傳或錄製一段真人語音 MP3（建議 10–30 秒）。樣本會在伺服器端做語音辨識校驗，純音或靜音會被拒絕。無需文字稿。",
     "cosyvoiceTestRequiresVoice": "請先新增複製音色 —— 該服務只能使用你複製的音色。",
+    "cloneApiKeyRequired": "請先在上方填寫該服務的 API 金鑰，再新增複製音色。",
     "cosyvoiceCloneUploadShort": "上傳 MP3",
     "cosyvoiceCloneSaved": "音色克隆成功。",
     "cosyvoiceCloneSaveFailed": "音色克隆失敗。",

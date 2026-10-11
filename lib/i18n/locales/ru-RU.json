@@ -1533,6 +1533,7 @@
     "cosyvoiceCloneVoicesTitle": "Клонированные голоса CosyVoice",
     "cosyvoiceCloneRefAudioHint": "Загрузите или запишите MP3-фрагмент реальной речи (рекомендуется 10–30 с). Образец проверяется распознаванием речи на сервере; чистые тоны и тишина отклоняются. Транскрипция не требуется.",
     "cosyvoiceTestRequiresVoice": "Сначала добавьте клонированный голос — сервис может произносить только ваши клоны.",
+    "cloneApiKeyRequired": "Сначала укажите выше API-ключ этого сервиса.",
     "cosyvoiceCloneUploadShort": "Загрузить MP3",
     "cosyvoiceCloneSaved": "Голос успешно клонирован.",
     "cosyvoiceCloneSaveFailed": "Не удалось клонировать голос.",

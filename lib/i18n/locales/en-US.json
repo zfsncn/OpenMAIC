@@ -1533,6 +1533,7 @@
     "cosyvoiceCloneVoicesTitle": "CosyVoice Cloned Voices",
     "cosyvoiceCloneRefAudioHint": "Upload or record a real-speech MP3 clip (10–30 s recommended). The sample is verified by speech recognition on the server, so pure tones or silence are rejected. No transcript is needed.",
     "cosyvoiceTestRequiresVoice": "Add a cloned voice first — this provider can only speak voices you enroll.",
+    "cloneApiKeyRequired": "Add this provider's API key above before cloning a voice.",
     "cosyvoiceCloneUploadShort": "Upload MP3",
     "cosyvoiceCloneSaved": "Voice cloned successfully.",
     "cosyvoiceCloneSaveFailed": "Voice cloning failed.",
