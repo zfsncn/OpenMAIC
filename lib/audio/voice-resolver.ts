@@ -20,6 +20,15 @@ import {
   normalizeVoxCPMBackend,
   voxCPMBackendSupportsReferenceAudio,
 } from '@/lib/audio/voxcpm';
+import {
+  MIMO_TTS_CATALOG_MODEL,
+  MIMO_TTS_PROVIDER_ID,
+  MIMO_TTS_VOICE_CLONE_MODEL,
+  MIMO_TTS_VOICE_DESIGN_MODEL,
+  getMiMoProfileVoiceId,
+  isMiMoCatalogVoice,
+  isMiMoProfileVoice,
+} from '@/lib/audio/mimo';
 
 export interface ResolvedVoice {
   providerId: TTSProviderId;
@@ -123,6 +132,26 @@ export function resolveAgentVoice(
       }
       continue;
     }
+    if (choice.providerId === MIMO_TTS_PROVIDER_ID) {
+      if (isMiMoProfileVoice(choice.voiceId)) {
+        // Local design/clone profile: the synthesis path re-reads it from
+        // IndexedDB per request; the model id is informational here and kept
+        // in sync with the kind-based routing (voiceMode is authoritative).
+        return {
+          providerId: choice.providerId,
+          modelId: choice.modelId || MIMO_TTS_CATALOG_MODEL,
+          voiceId: choice.voiceId,
+        };
+      }
+      if (isMiMoCatalogVoice(choice.voiceId)) {
+        return {
+          providerId: choice.providerId,
+          modelId: choice.modelId || MIMO_TTS_CATALOG_MODEL,
+          voiceId: choice.voiceId,
+        };
+      }
+      continue;
+    }
     if (choice.providerId === 'qwen-tts') {
       const catalogVoice = isQwenCatalogVoice(choice.voiceId);
       if (catalogVoice || choice.voiceId.trim()) {
@@ -211,7 +240,9 @@ export function resolveNarratorVoiceForGeneration(
   // it would advertise a speaker the engine rejects.
   if (providerId === 'cosyvoice-tts' && !isCosyVoiceCloneVoice(trimmed)) return undefined;
   const modelId =
-    providerId === 'cosyvoice-tts' || (providerId === 'qwen-tts' && isQwenCloneVoice(trimmed))
+    providerId === 'cosyvoice-tts' ||
+    (providerId === 'qwen-tts' && isQwenCloneVoice(trimmed)) ||
+    (providerId === MIMO_TTS_PROVIDER_ID && isMiMoProfileVoice(trimmed))
       ? resolveTTSModelForVoice(providerId, trimmed, providerConfig?.modelId)
       : undefined;
   return { providerId, voiceId: trimmed, ...(modelId ? { modelId } : {}) };
@@ -307,18 +338,27 @@ export function getEnabledProvidersWithVoices(
             return profile.kind !== 'clone' || voxCPMBackendSupportsReferenceAudio(backend);
           })
         : [];
-    const userVoices =
+    const userVoices: Array<{ id: string; name: string; language: string; kind?: string }> =
       providerId === VOXCPM_TTS_PROVIDER_ID
         ? visibleVoxCPMProfiles.map((profile) => ({
             id: getVoxCPMProfileVoiceId(profile.id),
             name: profile.name,
             language: 'auto',
           }))
-        : providerProfiles.map((profile) => ({
-            id: profile.id,
-            name: profile.name,
-            language: 'auto',
-          }));
+        : providerId === MIMO_TTS_PROVIDER_ID
+          ? voiceProfiles
+              .filter((profile) => profile.providerId === MIMO_TTS_PROVIDER_ID)
+              .map((profile) => ({
+                id: getMiMoProfileVoiceId(profile.id),
+                name: profile.name,
+                language: 'auto',
+                kind: profile.kind,
+              }))
+          : providerProfiles.map((profile) => ({
+              id: profile.id,
+              name: profile.name,
+              language: 'auto',
+            }));
 
     {
       const allVoices = [
@@ -342,6 +382,20 @@ export function getEnabledProvidersWithVoices(
                   .map((v) => ({ id: v.id, name: v.name, language: v.language }));
           if (providerId === VOXCPM_TTS_PROVIDER_ID) {
             compatibleVoices.push(...userVoices);
+          } else if (providerId === MIMO_TTS_PROVIDER_ID) {
+            // Model follows profile kind: design profiles only speak through
+            // the voicedesign model, clone samples only through voiceclone; the
+            // catalog model takes only preset names (handled by the
+            // compatibleModels filter above).
+            compatibleVoices.push(
+              ...userVoices.filter((voice) =>
+                model.id === MIMO_TTS_VOICE_DESIGN_MODEL
+                  ? voice.kind === 'prompt'
+                  : model.id === MIMO_TTS_VOICE_CLONE_MODEL
+                    ? voice.kind === 'clone'
+                    : false,
+              ),
+            );
           } else if (
             // Qwen's clone model takes only enrolled ids (its catalog voices
             // belong to the flash models); CosyVoice is the inverse — clone-

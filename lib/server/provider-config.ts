@@ -95,6 +95,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   // could set TTS_COSYVOICE_API_KEY in the environment and it would be silently
   // ignored, leaving every enrollment dependent on a browser-side key.
   TTS_COSYVOICE: 'cosyvoice-tts',
+  TTS_MIMO: 'mimo-tts',
   TTS_VOXCPM: 'voxcpm-tts',
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',

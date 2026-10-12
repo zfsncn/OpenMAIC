@@ -97,6 +97,7 @@ import { isCustomTTSProvider } from './types';
 import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS } from './constants';
 import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
 import { CosyVoiceError, synthesizeCosyVoice } from './cosyvoice-voice-clone';
+import { generateMiMoTTS } from './mimo-tts';
 import { evictCosyVoiceRegistrationMemo } from './cosyvoice-registration';
 import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
 import { splitConcatenatedJsonObjects } from './json-stream';
@@ -310,6 +311,9 @@ export async function generateTTS(
 
       case 'cosyvoice-tts':
         return await generateCosyVoiceTTS(config, text, signal);
+
+      case 'mimo-tts':
+        return await generateMiMoTTS(config, text, signal);
 
       case 'voxcpm-tts':
         return await generateVoxCPMTTS(config, text, signal);

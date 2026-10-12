@@ -31,6 +31,8 @@ import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/se
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
 import { CosyVoiceError, cosyVoiceErrorMessage } from '@/lib/audio/cosyvoice-voice-clone';
+import { MiMoTTSError } from '@/lib/audio/mimo-tts';
+import { MIMO_TTS_PROVIDER_ID } from '@/lib/audio/mimo';
 import { isQwenCloneVoice } from '@/lib/audio/constants';
 
 const log = createLogger('TTS API');
@@ -95,6 +97,26 @@ export async function POST(req: NextRequest) {
         400,
         'VoxCPM Auto Voice requires agent context',
       );
+    }
+
+    // MiMo pre-flight (same two-layer defense as voxcpm:auto above): a design
+    // voice without its description or a clone voice without its sample can
+    // only fail deep in the adapter; name the missing half here.
+    if (ttsProviderId === MIMO_TTS_PROVIDER_ID) {
+      const mimoMode =
+        typeof ttsProviderOptions?.voiceMode === 'string' ? ttsProviderOptions.voiceMode : '';
+      const mimoDescription =
+        typeof ttsProviderOptions?.voicePrompt === 'string' ? ttsProviderOptions.voicePrompt : '';
+      const mimoSample =
+        typeof ttsProviderOptions?.referenceAudioBase64 === 'string'
+          ? ttsProviderOptions.referenceAudioBase64
+          : '';
+      if (mimoMode === 'design' && !mimoDescription.trim()) {
+        return apiError('MIMO_DESIGN_REQUIRES_DESCRIPTION', 400, 'A voice description is required');
+      }
+      if (mimoMode === 'clone' && !mimoSample.trim()) {
+        return apiError('MIMO_CLONE_REQUIRES_SAMPLE', 400, 'The reference audio sample is missing');
+      }
     }
 
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
@@ -236,6 +258,25 @@ export async function POST(req: NextRequest) {
         error.httpStatus || 502,
         cosyVoiceErrorMessage(error, error.operation),
       );
+    }
+    if (error instanceof MiMoTTSError) {
+      // Same vendor-neutral logging rationale as the Qwen/CosyVoice branches.
+      log.error(
+        `TTS provider rejected the request [code=${error.code}`,
+        `http=${error.httpStatus ?? '-'}`,
+        `vendorCode=${error.vendorCode ?? '-'}`,
+        `vendorMessage=${error.vendorMessage ?? '-'}`,
+        `provider=${ttsProviderId ?? 'unknown'}`,
+        `voice=${ttsVoice ?? 'unknown'}`,
+        `audioId=${audioId ?? 'unknown'}`,
+        `]: ${error.message}`,
+      );
+      // MiMo rate limits hard (measured ~5 req/min): surface 429 as a typed
+      // rate limit like every other provider instead of a generic 500.
+      if (error.httpStatus === 429) {
+        return apiError('RATE_LIMITED', 429, error.vendorMessage || error.message);
+      }
+      return apiError(error.code, error.httpStatus || 502, error.message);
     }
     if (error instanceof TTSModelNotAllowedError) {
       return apiError(error.code, error.httpStatus, error.message);

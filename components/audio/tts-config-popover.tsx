@@ -19,6 +19,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { getTTSVoices, ignoresTTSRate, resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import {
+  getMiMoProviderOptions,
   getVoxCPMProviderOptions,
   getVoxCPMVoiceOptions,
   useAllVoiceProfiles,
@@ -115,7 +116,9 @@ export function TtsConfigPopover() {
               ...(providerConfig?.providerOptions || {}),
               ...(await getVoxCPMProviderOptions(ttsVoice, { role: 'teacher', locale })),
             }
-          : undefined;
+          : ttsProviderId === 'mimo-tts'
+            ? await getMiMoProviderOptions(ttsVoice)
+            : undefined;
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,

@@ -13,7 +13,8 @@
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { VoiceDesign } from '@/lib/audio/voice-design';
-import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
+import { getMiMoProviderOptions, getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
+import { MIMO_TTS_PROVIDER_ID } from '@/lib/audio/mimo';
 import {
   VOXCPM_AUTO_VOICE_ID,
   VOXCPM_TTS_PROVIDER_ID,
@@ -67,6 +68,26 @@ function effectiveVoiceDesign(agent: AgentConfig | undefined): VoiceDesign | und
 }
 
 /**
+ * MiMo style instruction from the agent's voice design: MiMo's `user` message
+ * accepts free-form natural-language direction (its docs' "director mode"),
+ * which maps 1:1 onto the provider-neutral VoiceDesign triple. Empty when the
+ * agent carries no descriptor (a profile's own stylePrompt, if any, wins in
+ * getMiMoProviderOptions).
+ */
+function effectiveStyleInstruction(agent: AgentConfig | undefined): string | undefined {
+  const design =
+    agent?.voiceDesign ??
+    (agent?.persona?.trim()
+      ? { identity: agent.persona.trim(), texture: '', delivery: '' }
+      : undefined);
+  if (!design) return undefined;
+  const parts = [design.identity, design.texture, design.delivery]
+    .map((p) => p?.trim())
+    .filter(Boolean);
+  return parts.length ? parts.join('；') : undefined;
+}
+
+/**
  * Produce the `ttsProviderOptions` to send to /api/generate/tts for `agent`
  * (pass the teacher agent for narration, the speaking agent for discussion,
  * or undefined when there is no agent). Returns undefined for providers with
@@ -76,6 +97,13 @@ export async function resolveAgentVoiceOptions(
   agent: AgentConfig | undefined,
   opts: AgentVoiceResolveOptions,
 ): Promise<Record<string, unknown> | undefined> {
+  if (opts.providerId === MIMO_TTS_PROVIDER_ID) {
+    return {
+      ...(await getMiMoProviderOptions(opts.voiceId, {
+        styleInstruction: effectiveStyleInstruction(agent),
+      })),
+    };
+  }
   if (opts.providerId !== VOXCPM_TTS_PROVIDER_ID) return undefined;
   return {
     ...(opts.providerConfig?.providerOptions || {}),

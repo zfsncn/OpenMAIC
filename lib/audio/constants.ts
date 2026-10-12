@@ -43,6 +43,12 @@ import {
   VOXCPM_TTS_PROVIDER_ID,
   VOXCPM_VLLM_MODEL_ID,
 } from './voxcpm';
+import {
+  MIMO_PRESET_VOICES,
+  MIMO_TTS_CATALOG_MODEL,
+  MIMO_TTS_MODELS,
+  MIMO_TTS_PROVIDER_ID,
+} from './mimo';
 
 /**
  * Default supported languages for custom OpenAI-compatible ASR providers.
@@ -95,6 +101,14 @@ export const COSYVOICE_TTS_VOICE_CLONE_MODEL = 'cosyvoice-v3.5-plus';
 
 /** Sentinel voice id: this provider has no voice that is not enrolled. */
 export const COSYVOICE_NO_SYSTEM_VOICE = '__cosyvoice_requires_enrollment__';
+
+/**
+ * MiMo-V2.5-TTS: stateless like VoxCPM — every request carries its voice
+ * material (preset name / description / base64 sample), so there is no
+ * enrollment flow, no cloud voice ids, and nothing to validate against a
+ * static registry beyond the preset catalog plus local profile ids.
+ * Metadata and helpers live in `@/lib/audio/mimo` (client-safe).
+ */
 
 /**
  * CosyVoice enrollment ids look like `cosyvoice-v3.5-plus-<prefix>-<hash>`, so a
@@ -766,6 +780,22 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
   },
 
+  'mimo-tts': {
+    id: MIMO_TTS_PROVIDER_ID,
+    name: 'MiMo-V2.5-TTS (Xiaomi)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
+    icon: '/logos/xiaomi.svg',
+    // Three models chosen by the shape of the selected voice (preset / design /
+    // clone) — see resolveMiMoModelForRequest. The catalog model is the
+    // default because it is the only one with true streaming and the only one
+    // usable with zero local setup.
+    models: MIMO_TTS_MODELS.map((m) => ({ id: m.id, name: m.name })),
+    defaultModelId: MIMO_TTS_CATALOG_MODEL,
+    voices: MIMO_PRESET_VOICES,
+    supportedFormats: ['mp3', 'wav'],
+  },
+
   'minimax-tts': {
     id: 'minimax-tts',
     name: 'MiniMax TTS',
@@ -1398,6 +1428,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
   'cosyvoice-tts': COSYVOICE_NO_SYSTEM_VOICE,
+  'mimo-tts': '冰糖',
   'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
@@ -1412,6 +1443,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'glm-tts': 'glm-tts',
   'qwen-tts': 'qwen3-tts-flash',
   'cosyvoice-tts': COSYVOICE_TTS_VOICE_CLONE_MODEL,
+  'mimo-tts': MIMO_TTS_CATALOG_MODEL,
   'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',

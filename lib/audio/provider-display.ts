@@ -28,6 +28,7 @@ const TTS_PROVIDER_NAME_KEYS: Record<string, string> = {
   'glm-tts': 'settings.providerGLMTTS',
   'qwen-tts': 'settings.providerQwenTTS',
   'cosyvoice-tts': 'settings.providerCosyVoiceTTS',
+  'mimo-tts': 'settings.providerMiMoTTS',
   'voxcpm-tts': 'settings.providerVoxCPMTTS',
   'doubao-tts': 'settings.providerDoubaoTTS',
   'elevenlabs-tts': 'settings.providerElevenLabsTTS',

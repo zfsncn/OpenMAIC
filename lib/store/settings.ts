@@ -28,6 +28,7 @@ import {
   isQwenVoiceCloneModel,
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
+import { MIMO_TTS_CATALOG_MODEL } from '@/lib/audio/mimo';
 import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
@@ -687,6 +688,12 @@ const getDefaultAudioConfig = () => ({
       modelId: VOXCPM_VLLM_MODEL_ID,
       enabled: true,
       providerOptions: { backend: DEFAULT_VOXCPM_BACKEND },
+    },
+    'mimo-tts': {
+      apiKey: '',
+      baseUrl: '',
+      modelId: MIMO_TTS_CATALOG_MODEL,
+      enabled: true,
     },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: true },
