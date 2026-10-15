@@ -59,3 +59,12 @@ curl -X POST -H "Authorization: Bearer $YOVOICE_API_TOKEN" \
 3. **`wslrelay.exe` 劫持 127.0.0.1:3002**：Docker Desktop 的旧转发残留（PID 8316）挡在 com.docker.backend（0.0.0.0:3002）前面，宿主 curl 全部 000 挂起；`taskkill` 该 relay 后立即恢复。诊断特征：LAN IP 通、127.0.0.1 不通、容器内 health 正常。
 4. **流水线 curl 被沙箱代理 env 污染**（`HTTP_PROXY` 失效代理 → 验证步挂 16 分钟）：重跑加 `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY`。
 5. 桌面应用与 `serve` 共用数据目录互斥：接入了 serve 就别同时开桌面应用生成。
+6. **`D:\soft\yovoice\yovoice.exe` 是桌面 GUI 二进制（VoiceWorkbench.Desktop），不能拿去跑 `serve`**：无窗口环境下 WPF 崩溃（`InvalidOperationException ... MainWindow`），表现为进程活着但不监听 8080。serve 必须用 **`C:\Users\zfsnc\yovoice-cli\yovoice.exe`**（与 serve-autostart.cmd 一致）。
+7. **删除服务端音色没有官方入口**：HTTP API 无 DELETE（实测 404）、CLI 无 voices 子命令。只能文件层操作：停 serve → 备份 → 删 `voices\*.wav` + 从 `state.json` 的 `voices` 数组移除条目 → 重启 serve。列表里的显示名是 `name`（上传文件名），同 id ≠ 同文件：重复上传同一音频会生成多条不同 id 的同名义。
+
+## 6. 音色删除实操记录（2026-10-15）
+
+- 删除了 3 条重复的 `9cacfff39…`（同文件重复上传产生，文件 6843b9d8 / 9dd44577 / 0dc77114）；两条 `20261008`（b3efc9fa / d10ee9a6）在用全保留。
+- 备份位置：`D:\soft\yovoice\backup-20261015\`（state.json.bak + 3 个 wav）。
+- 验证：`GET /v1/voices` 与 3002 代理均只剩 2 条 20261008；`voxcpm2-orig + b3efc9fa` 真实合成 200 WAV（245KB）。
+
