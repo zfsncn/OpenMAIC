@@ -108,3 +108,25 @@ curl -X POST -H "Authorization: Bearer $YOVOICE_API_TOKEN" \
 
 
 
+## 9. CLI shim：3002 在线真克隆（2026-10-15 上线）
+
+serve HTTP 层丢 voxcpm2 voiceId（§7），而 CLI 直连已实锤真克隆 ⇒ 用一个宿主机
+**CLI 包装层（shim）顶替 serve 监听 8080**，3002 零代码/零配置改动（baseUrl 仍指
+`host.docker.internal:8080`，token 不变）。
+
+- 实现：`.workbuddy/deploy/yovoice-cli-shim.mjs`（Node，无依赖，~300 行）。
+  完整复刻 4 端点契约：`POST /v1/generate`、`GET /v1/voices`、
+  `POST /v1/voices?name=`、`GET /v1/models`（后三者读/写 `state.json` 与
+  `voices\` 目录；models 有 60s 缓存）。
+- 生成 = 内部串行 spawn `yovoice generate --voice <id> --model <id>`：单任务
+  语义（并发 409，适配器自带 2 次退避重试）、客户端断开即 kill 子进程、
+  超时 504（默认 10m）、坏请求/找不到 voiceId 400。
+- 开机自启：`D:/soft/yovoice/serve-autostart.cmd` 已改为拉起 shim（原拉 serve；
+  端口被占则自行退出，无害）。
+- 验收记录（2026-10-15）：宿主机 curl 401/200 边界 ✓、voices/models/generate ✓
+  （generate 200 audio/wav RIFF）、3002 容器内 node 经 host.docker.internal
+  voices+generate 200 ✓、上传端点 1-60s 校验门 400 + 正常路径 200 ✓
+  （测试音色已清理）。**最终听感验收 = 用户在 3002 UI 点「测试 TTS」试听。**
+- 坑：① 每请求 CLI 冷启动 ≈9s（0.64s 音频总耗时 10s 实测）；② 桌面应用与
+  shim 依旧互斥（共用数据目录）；③ shim 挂 = 3002 yovoice 不可用（与 serve 同）；
+  ④ 上传的新音色注册表条目无 `referenceText`——若克隆异常可按 §6 手工补逐字稿。
