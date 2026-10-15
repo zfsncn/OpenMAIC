@@ -69,6 +69,7 @@ import {
   useMiMoVoiceProfiles,
   getMiMoProviderOptions,
 } from '@/lib/audio/voxcpm-voices';
+import { getMiMoProfileVoiceId } from '@/lib/audio/mimo';
 import {
   VOXCPM_BACKENDS,
   VOXCPM_TTS_PROVIDER_ID,
@@ -2101,22 +2102,26 @@ function MimoVoiceManager() {
     }
   };
 
-  const handlePreview = async (profileId: string) => {
-    if (previewingVoiceId === profileId) {
+  // ⚠️ The parameter is the profile VOICE id (`mimo:profile:<uuid>`), not the
+  // raw profile id — getMiMoProviderOptions decodes the prefix to find the
+  // IndexedDB row. The pool rows hand over the encoded id (VoxCPM pattern);
+  // passing the raw id silently loses the reference sample.
+  const handlePreview = async (voiceId: string) => {
+    if (previewingVoiceId === voiceId) {
       stopPreview();
       setPreviewingVoiceId(null);
       return;
     }
-    setPreviewingVoiceId(profileId);
+    setPreviewingVoiceId(voiceId);
     try {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: 'mimo-tts',
         speed: 1,
-        voice: profileId,
+        voice: voiceId,
         apiKey: providerConfig?.apiKey,
         baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
-        providerOptions: await getMiMoProviderOptions(profileId),
+        providerOptions: await getMiMoProviderOptions(voiceId),
       });
     } catch (error) {
       setPreviewingVoiceId(null);
@@ -2204,6 +2209,7 @@ function MimoVoiceManager() {
               // Retired voice-design profiles (kind='prompt'): keep them
               // visible for cleanup, but nothing can speak them anymore.
               const retired = profile.kind !== 'clone';
+              const voiceId = getMiMoProfileVoiceId(profile.id);
               return (
                 <VoiceProfileRow
                   key={profile.id}
@@ -2218,8 +2224,8 @@ function MimoVoiceManager() {
                   }
                   kind={retired ? 'prompt' : 'clone'}
                   muted={retired}
-                  selected={!retired && ttsProviderId === 'mimo-tts' && ttsVoice === profile.id}
-                  previewing={previewingVoiceId === profile.id}
+                  selected={!retired && ttsProviderId === 'mimo-tts' && ttsVoice === voiceId}
+                  previewing={previewingVoiceId === voiceId}
                   previewDisabled={retired}
                   previewDisabledTitle={t('settings.mimoDesignRetired')}
                   onSelect={
@@ -2227,13 +2233,13 @@ function MimoVoiceManager() {
                       ? undefined
                       : () => {
                           if (ttsProviderId !== 'mimo-tts') setTTSProvider('mimo-tts');
-                          setTTSVoice(profile.id);
+                          setTTSVoice(voiceId);
                           toast.success(t('settings.cloneVoiceActivated'));
                         }
                   }
                   onPreview={() => {
                     if (retired) return;
-                    void handlePreview(profile.id);
+                    void handlePreview(voiceId);
                   }}
                   onDelete={() => void deleteVoice(profile.id)}
                 />

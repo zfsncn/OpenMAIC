@@ -99,3 +99,7 @@ packages/*/rollup.config-[0-9]*.cjs
 .workbuddy/*
 !.workbuddy/fork-tools/
 !.workbuddy/fork-tools/*.sh
+
+# 0-byte noise file recreated by an external process; ignored at the sync
+# snapshot layer too (see .workbuddy/fork-tools/sync-fork-to-live.sh XGLOT).
+历史副本*
