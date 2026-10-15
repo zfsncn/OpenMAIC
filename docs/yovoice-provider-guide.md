@@ -89,15 +89,14 @@ curl -X POST -H "Authorization: Bearer $YOVOICE_API_TOKEN" \
 | **注册表补 `referenceText` 后 omni + voiceId** | F0 253Hz IQR(212-282) ≈ 参考 255Hz(209-320) | ✅ **omni 真克隆激活** |
 | 同法 voxcpm2 | 仍默认音 | voxcpm2 的 HTTP voiceId 路径彻底无效 |
 
-**根因**：该引擎（v0.2.0）克隆是「需要参考原文的 continuation 式」。`POST /v1/voices` 无 transcript 字段 → 注册音色天生缺原文 → 生成时静默回退默认音（HTTP 不报错、CLI 报错）。
+**根因（2026-10-15 晚间最终更正）**：
+- 用户盲听裁决 F（11:24 存档）= **100% 本人音色** → 引擎克隆能力没问题。深挖确认：**中午前成功的克隆全部出自 yovoice 桌面应用的内部管线**（service.log 带 `project_id`/`draft.save`，state.backup.json 留有草稿：voxMode=clone、无原文、voiceId=0dc77114），不是 serve 的公开 HTTP 接口。
+- **serve 公开 `POST /v1/generate` 存在上游 bug**：voxcpm2 的 `voiceId` 被静默丢弃（带/不带输出逐字节相同；`voxMode`/`mode`/请求级 `referenceText` 均无效），omnivoice 的 voiceId 半生效（产出第三声）。同一份音频、同一引擎，桌面应用管线克隆成功 ⇒ bug 定位在 serve 的 HTTP 层参数传递，不在引擎。
+- ⚠️ 排障误判更正：① CLI `--voice` 报 `voiceRequired` 是因为漏了 `--data-dir`（读了默认目录）；② 「引擎必须参考原文才能克隆」结论作废——桌面应用无原文也能克隆（引擎自带 ASR 或 clone 模式自处理）；③ `--reference` 指向不存在的文件时 CLI 静默回退默认音（R1 教训，先确认文件存在）。
 
-**修复（对 omnivoice-bf16 有效）**：停 serve → 备份 → 在 `state.json` 音色条目手工加 `"referenceText": "<样本逐字稿>"`（同时加了 `transcript`/`text` 两个候选字段）→ 重启 serve。逐字稿存 `D:\soft\yovoice\backup-20261015\20261008-transcript.txt`。
-
-**使用结论（3002 侧，最终版——用户盲听裁决 2026-10-15）**：
-- 用户盲听 A（omni 补原文）/B（omni 默认）/C（voxcpm2 输出）/D（参考样本）四段：**全部互不相同**。即 omni 补原文后确实消费了参考音频（A≠B，F0 也吻合），但产出的是「既非默认音、也非目标音色」的第三种声音——**F0 对了、音色不对，克隆质量不可用**。
-- **最终定论：yovoice v0.2.0 两个模型的 HTTP voiceId 路径均无法产出目标音色**（voxcpm2=纯默认音；omni=低质量第三声）。3002 上 yovoice 只能作「本地默认音/备用」，**真克隆只有 MiMo / CosyVoice**。
-- 此前 yovoice 接入以来所有「克隆」输出实际都是非目标音色；MiMo/CosyVoice 的克隆一直是真的。
-- 候选上游 issue：附 A≡C 字节级复现 + CLI voiceRequired + reference-text 对照 + 四段盲听结论。
+**使用结论（3002 侧，最终版）**：
+- HTTP 路径下两个模型都产不出目标音色（voxcpm2=默认音、omni=第三声）→ 3002 上 yovoice 只能作「本地默认音/备用」；**真克隆 = MiMo/CosyVoice（云）+ yovoice 桌面应用（本地手动）**。
+- 候选上游 issue：serve `/v1/generate` voxcpm2 voiceId 被丢弃——证据：A≡C 字节级复现、桌面应用同音色同引擎克隆成功（11:24 project_id 日志 + 用户盲听确认）、omni 半生效对照。
 
 ## 8. 实验记录归档
 
