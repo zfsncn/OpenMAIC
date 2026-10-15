@@ -35,6 +35,10 @@ build
 .env*
 !.env.example
 server-providers*.yml
+# Live-only dev tool (2026-10-09, Volcano Engine TTS proxy) that embeds vendor
+# credentials. It is not source, must never enter an image, and is ignored at
+# the sync-snapshot layer too (see .workbuddy/fork-tools/sync-fork-to-live.sh).
+tts_proxy.py
 
 # misc
 assets

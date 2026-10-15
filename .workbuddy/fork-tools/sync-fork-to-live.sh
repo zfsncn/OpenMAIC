@@ -30,7 +30,13 @@ import os, hashlib, sys, json, fnmatch
 root, out = sys.argv[1], sys.argv[2]
 SKIP = {'node_modules','.next','.git','.codegraph','data','test-results',
         'playwright-report','blob-report','coverage','.workbuddy','dist'}
-XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt'}
+XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt','tts_proxy.py'}
+# ⚠️ `tts_proxy.py`（2026-10-09 留在现场的火山引擎 TTS 代理脚本）是**现场独有
+#    的开发工具**，且内嵌火山引擎凭证 ⇒ 既不是源码，也绝不能进 fork git 仓库或
+#    镜像构建上下文。它与 `历史副本*` 同属「现场噪音」：在快照层忽略，否则每轮
+#    同步的漂移校验都会被这一个文件阻断（2026-10-15 实测）。
+#    （文件本身未删除、未移动，仍在 D:\OpenMAIC\tts_proxy.py；.dockerignore
+#     已同步挡住它进镜像。）
 XGLOT = ['packages/*/rollup.config-*.cjs',   # 构建期临时产物，非源码
          '历史副本*']                          # 0 字节杂项：见下方说明
 # ⚠️ `历史副本（内容相同），保留仅作回退，**不要再改它**。` 是仓库根一个 0 字节
