@@ -123,14 +123,30 @@ YOVOICE_API_TOKEN=$(cat /d/tmp/yovoice-token.txt) \
 # 日志应输出: yovoice CLI shim listening on 127.0.0.1:8080
 ```
 
-4. 开机自启：`D:\soft\yovoice\serve-autostart.cmd`（已改为拉起 shim；端口被占
-   则自行退出，无害）：
+4. 开机自启（**两个文件内容保持一致**，均已改为拉 shim；端口被占则自行退出，
+   无害）：
+   - 启动文件夹（开机真正生效的）：
+     `C:\Users\zfsnc\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\yovoice-serve.cmd`
+   - `D:\soft\yovoice\serve-autostart.cmd`（手动双击用）
 
 ```bat
 @echo off
 set "YOVOICE_API_TOKEN=7e89a12d...（= 3002 provider Key）"
 start "yovoice-shim" /min "D:\soft\nodejs\node.exe" "D:\OpenMAIC\.workbuddy\deploy\yovoice-cli-shim.mjs"
 ```
+
+   ⚠️⚠️ **进程归属决定 shim 存活**（17:50 实测教训）：shim 必须由**用户会话**
+   （启动文件夹 / 手动双击 / 开机）拉起。AI 助手会话沙箱派生的任何进程都活不过
+   会话边界（后台任务 / `cmd start` / `Start-Process` / WMI / Explorer 代启动
+   全部被回收或拦截），症状 =「当次验证 OK、过一会儿 8080 无监听、设置页音色
+   列表变空『—』、可用模型回退全目录」。遇到此症状先查进程树归属，别改服务代码。
+
+5. 默认音色（2026-10-15 17:25 增补，**无需手动选音色**）：
+   - shim 兜底：voiceId 空 / `'default'` / `__yovoice` 哨兵 → 自动解析为注册表
+     **最新音色**（改 shim 即生效，无需重建 3002）；
+   - 3002 设置面板自动 pin：存储选择悬空时自动勾选最新音色并持久化
+     （fork `c409aa6d`，MiMo 范式；根因 = 重新上传样本会换新 id）；
+   - 结论：**重新上传样本换新 id 后也不用重选**。
 
 ### 步骤 6：3002 侧（零代码，仅需确认两项）
 
@@ -157,6 +173,26 @@ start "yovoice-shim" /min "D:\soft\nodejs\node.exe" "D:\OpenMAIC\.workbuddy\depl
 ⚠️ 每次生成有 ≈9s CLI 冷启动（模型加载），测试时稍等属正常。
 
 ---
+
+### 步骤 8：重启电脑后的恢复（日常操作，共 2 步）
+
+容器重启策略：`openmaic-new` = **no**（重启后不会自启，需手动拉起）；
+`openmaic-new-db` = `unless-stopped`（随 Docker Desktop 自动恢复）；
+shim = 启动文件夹自启（无需操作）。
+
+| 步骤 | 操作 | 判定 |
+| --- | --- | --- |
+| ① | 等 Docker Desktop 启动完成（没设自启就手动打开） | 右下角鲸鱼图标，DB 容器自动恢复 |
+| ② | 双击 **`D:\OpenMAIC\start-3002-after-reboot.cmd`** | 输出 `openmaic-new  Up` |
+
+然后浏览器访问 `http://localhost:3002/` 即可。快速自检：设置页 yovoice 音色列表
+能列出 20261008 = 全链路通；任务管理器有 `node.exe`（shim）。
+
+⚠️ 流水线注意：`start-3002-after-reboot.cmd`、`server-providers.yml` 是**现场
+独有文件**，已加入 `sync-fork-to-live.sh` 的 XFILE 忽略清单（fork `3d73bfda`、
+`5daa4115`），否则每轮流水线漂移校验都会被「仅现场=1」阻断。
+
+
 
 ## 4. 回滚方案
 
@@ -214,9 +250,10 @@ start "yovoice-serve" /min "C:\Users\zfsnc\yovoice-cli\yovoice.exe" serve --data
 | 文件 | 说明 |
 | --- | --- |
 | `D:\OpenMAIC\.workbuddy\deploy\yovoice-cli-shim.mjs` | CLI shim（本次新增） |
-| `D:\soft\yovoice\serve-autostart.cmd` | 自启脚本（改为拉 shim） |
+| `D:\soft\yovoice\serve-autostart.cmd` + 启动文件夹 `yovoice-serve.cmd` | 自启脚本（两份内容一致，拉 shim） |
+| `D:\OpenMAIC\start-3002-after-reboot.cmd` | 重启后一键拉起 3002（现场独有，已入 XFILE 忽略清单） |
 | `D:\soft\yovoice\state.json` | 音色注册表（voices 数组） |
 | `D:\soft\yovoice\backup-20261015\` | 全部原始样本 + 逐字稿 + state 备份 |
 | `C:\Users\zfsnc\.workbuddy\skills\yovoice\LOCAL-SERVER.md` | 技能侧本机服务说明（含 shim 模板） |
-| fork 提交 | `d97914ed`（provider 上线）→ `6eb45130`（动态模型）→ `ca7fa046`（CLI 克隆实锤）→ `c83817fb`（shim §9） |
+| fork 提交 | `d97914ed`（provider 上线）→ `6eb45130`（动态模型）→ `ca7fa046`（CLI 克隆实锤）→ `c83817fb`（shim §9）→ `c409aa6d`（默认音色自动 pin）→ `3d73bfda`/`5daa4115`（流水线忽略现场独有文件） |
 | 手册 | `docs/yovoice-provider-guide.md` §5 踩坑 / §6 音色管理 / §7 克隆真相 / §8 实验归档 / §9 shim |
