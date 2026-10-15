@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -195,6 +195,17 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     if (selectedProviderId === 'mimo-tts' && !mimoProfiles.some((p) => p.kind === 'clone')) {
       setTestStatus('error');
       setTestMessage(t('settings.mimoTestRequiresVoice'));
+      return;
+    }
+
+    // yovoice voices live on its server; a sentinel/stale selection cannot
+    // speak — answer before the request instead of relaying the 400.
+    if (
+      selectedProviderId === 'yovoice-tts' &&
+      (!effectiveVoice || effectiveVoice.startsWith('__yovoice'))
+    ) {
+      setTestStatus('error');
+      setTestMessage(t('settings.yovoiceTestRequiresVoice'));
       return;
     }
 
@@ -607,6 +618,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       {selectedProviderId === 'qwen-tts' && <QwenVoiceCloneManager />}
       {selectedProviderId === 'cosyvoice-tts' && <CosyVoiceCloneManager />}
       {selectedProviderId === 'mimo-tts' && <MimoVoiceManager />}
+      {selectedProviderId === 'yovoice-tts' && <YovoiceVoiceManager />}
 
       {/* Custom Voice List Management */}
       {isCustom && (
@@ -2065,6 +2077,154 @@ function AddVoiceRow({
  * (kind='prompt') are still listed — muted, preview-disabled, not selectable —
  * so the user can find and delete them. Nothing routes them anymore.
  */
+/**
+ * yovoice voice manager — the voices live in the yovoice SERVER's data dir,
+ * so unlike the IndexedDB pools above this panel mirrors remote state: list
+ * via the /api/generate/yovoice-voices proxy, select one as active, and
+ * upload new reference samples (yovoice converts formats itself). There is
+ * no delete endpoint upstream, so rows are list-only.
+ */
+function YovoiceVoiceManager() {
+  const { t } = useI18n();
+  const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
+  const ttsVoice = useSettingsStore((state) => state.ttsVoice);
+  const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
+  const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
+  const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
+
+  const providerConfig = ttsProvidersConfig['yovoice-tts'];
+  const apiKey = providerConfig?.apiKey?.trim() || '';
+  const [voices, setVoices] = useState<Array<{ id: string; name?: string; duration?: number }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+
+  const refresh = useCallback(
+    async (key: string) => {
+      if (!key) return;
+      setLoading(true);
+      try {
+        const response = await fetch('/api/generate/yovoice-voices', {
+          headers: { 'x-yovoice-key': key },
+        });
+        const body = await response.json().catch(() => null);
+        if (body?.success && Array.isArray(body.voices)) {
+          setVoices(body.voices);
+        } else if (body && !body.success) {
+          toast.error(`${t('settings.yovoiceListFailed')}: ${body.error || ''}`.trim());
+        }
+      } catch {
+        toast.error(t('settings.yovoiceListFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t],
+  );
+
+  useEffect(() => {
+    void refresh(apiKey);
+  }, [refresh, apiKey]);
+
+  const selectVoice = (voiceId: string) => {
+    if (ttsProviderId !== 'yovoice-tts') setTTSProvider('yovoice-tts');
+    setTTSVoice(voiceId);
+    toast.success(t('settings.yovoiceVoiceSelected'));
+  };
+
+  const handleUpload = async () => {
+    if (!file || !apiKey) return;
+    setUploading(true);
+    try {
+      const name = file.name.replace(/\.[^.]+$/u, '') || 'voice';
+      const response = await fetch(
+        `/api/generate/yovoice-voices?name=${encodeURIComponent(name)}`,
+        {
+          method: 'POST',
+          headers: { 'x-yovoice-key': apiKey, 'Content-Type': 'application/octet-stream' },
+          body: file,
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (body?.success) {
+        const created = Array.isArray(body.voices) ? body.voices[0] : body.voices;
+        toast.success(t('settings.yovoiceVoiceAdded'));
+        setFile(null);
+        await refresh(apiKey);
+        if (created?.id) selectVoice(created.id);
+      } else {
+        toast.error(`${t('settings.yovoiceListFailed')}: ${body?.error || ''}`.trim());
+      }
+    } catch {
+      toast.error(t('settings.yovoiceListFailed'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-sm">{t('settings.yovoiceVoicesTitle')}</Label>
+      <p className="text-xs text-muted-foreground">{t('settings.yovoiceVoicesHint')}</p>
+      <div className="space-y-1 rounded-lg border border-border/60 p-2">
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : voices.length === 0 ? (
+          <p className="text-xs text-muted-foreground">—</p>
+        ) : (
+          voices.map((voice) => {
+            const selected = ttsProviderId === 'yovoice-tts' && ttsVoice === voice.id;
+            return (
+              <div
+                key={voice.id}
+                className={cn(
+                  'flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm',
+                  selected ? 'bg-primary/10 font-medium' : 'hover:bg-muted/60',
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{voice.name || voice.id}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={selected ? 'secondary' : 'ghost'}
+                  onClick={() => selectVoice(voice.id)}
+                >
+                  ✓
+                </Button>
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="inline-flex h-9 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground">
+          <Upload className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 truncate">
+            {file ? file.name : t('settings.cosyvoiceCloneUploadShort')}
+          </span>
+          <input
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={(event) => {
+              setFile(event.target.files?.[0] || null);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <Button
+          type="button"
+          size="sm"
+          disabled={!file || !apiKey || uploading}
+          onClick={() => void handleUpload()}
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MimoVoiceManager() {
   const { t } = useI18n();
   const { profiles, addCloneVoice, deleteVoice } = useMiMoVoiceProfiles();

@@ -27,6 +27,7 @@ import {
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
   TTS_PROVIDERS,
+  YOVOICE_DEFAULT_MODEL,
 } from '@/lib/audio/constants';
 import { MIMO_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/mimo';
 import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
@@ -693,6 +694,12 @@ const getDefaultAudioConfig = () => ({
       apiKey: '',
       baseUrl: '',
       modelId: MIMO_TTS_VOICE_CLONE_MODEL,
+      enabled: true,
+    },
+    'yovoice-tts': {
+      apiKey: '',
+      baseUrl: '',
+      modelId: YOVOICE_DEFAULT_MODEL,
       enabled: true,
     },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },

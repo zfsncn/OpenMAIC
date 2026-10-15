@@ -87,6 +87,7 @@ export type BuiltInTTSProviderId =
   | 'qwen-tts'
   | 'cosyvoice-tts'
   | 'mimo-tts'
+  | 'yovoice-tts'
   | 'voxcpm-tts'
   | 'doubao-tts'
   | 'elevenlabs-tts'

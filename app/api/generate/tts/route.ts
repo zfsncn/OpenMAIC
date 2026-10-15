@@ -120,10 +120,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // yovoice pre-flight: the server's voice ids live in ITS data dir, so a
+    // sentinel/stale voice can only fail at the vendor — name the missing
+    // half here instead.
+    if (ttsProviderId === 'yovoice-tts' && (!ttsVoice || ttsVoice.startsWith('__yovoice'))) {
+      return apiError(
+        'YOVOICE_VOICE_REQUIRED',
+        400,
+        'yovoice needs a voice from its server: pick one in Settings (voice pool)',
+      );
+    }
+
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('tts', ttsProviderId);
-    const clientBaseUrl = managed ? undefined : ttsBaseUrl || undefined;
-    // A client-supplied BYOK base URL always runs under the strict public
+    const clientBaseUrl = managed ? undefined : ttsBaseUrl || undefined; // A client-supplied BYOK base URL always runs under the strict public
     // policy; only a server-managed (or built-in default) target may inherit the
     // operator's ALLOW_LOCAL_NETWORKS opt-in. Never derived from request input.
     const publicOnly = Boolean(clientBaseUrl);

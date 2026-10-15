@@ -111,6 +111,30 @@ export const COSYVOICE_NO_SYSTEM_VOICE = '__cosyvoice_requires_enrollment__';
 export const MIMO_NO_SYSTEM_VOICE = '__mimo_requires_clone__';
 
 /**
+ * yovoice is a LOCAL clone-only server: its voices live in the yovoice data
+ * dir and are listed over HTTP, so like cosyvoice/mimo it ships an empty
+ * catalog with the registered-voice pass — without it the empty-voices filter
+ * would make the provider vanish from the picker. The base URL defaults to
+ * the container's view of the host loopback; reaching it requires the
+ * operator's ALLOW_LOCAL_NETWORKS opt-in (strict public for any client-set
+ * baseUrl, same as every BYOK provider).
+ */
+export const YOVOICE_NO_VOICE = '__yovoice_requires_voice__';
+export const YOVOICE_DEFAULT_MODEL = 'voxcpm2-orig';
+export const YOVOICE_TTS_MODELS = [
+  { id: 'voxcpm2-orig', name: 'VoxCPM2 (orig)' },
+  { id: 'voxcpm2-bf16', name: 'VoxCPM2 (bf16)' },
+  { id: 'voxcpm2-q8', name: 'VoxCPM2 (q8)' },
+  { id: 'omnivoice-bf16', name: 'OmniVoice (bf16)' },
+  { id: 'omnivoice-q8', name: 'OmniVoice (q8)' },
+  { id: 'index-2.5-orig', name: 'IndexTTS 2.5 (orig)' },
+  { id: 'index-2.5-f16', name: 'IndexTTS 2.5 (f16)' },
+  { id: 'index-2.5-q8', name: 'IndexTTS 2.5 (q8)' },
+  { id: 'index-2-orig', name: 'IndexTTS 2.0 (orig)' },
+  { id: 'index-2-q8', name: 'IndexTTS 2.0 (q8)' },
+];
+
+/**
  * CosyVoice enrollment ids look like `cosyvoice-v3.5-plus-<prefix>-<hash>`, so a
  * catalog voice can never collide with an enrolled one. Matching the model
  * prefix keeps a hypothetical future system-voice id from being mistaken for a
@@ -804,6 +828,23 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3', 'wav'],
   },
 
+  'yovoice-tts': {
+    id: 'yovoice-tts',
+    name: 'yovoice (本地)',
+    requiresApiKey: true,
+    // The container's view of the host loopback — yovoice serves on the
+    // operator's machine. A client-set baseUrl runs strict-public instead.
+    defaultBaseUrl: 'http://host.docker.internal:8080',
+    // Server-side voice list (GET /v1/voices) is fetched by the settings
+    // manager through the /api/generate/yovoice-voices proxy; no static
+    // catalog exists, so the registered-voice pass keeps the provider listed.
+    requiresRegisteredVoice: true,
+    models: YOVOICE_TTS_MODELS,
+    defaultModelId: YOVOICE_DEFAULT_MODEL,
+    voices: [],
+    supportedFormats: ['wav'],
+  },
+
   'minimax-tts': {
     id: 'minimax-tts',
     name: 'MiniMax TTS',
@@ -1437,6 +1478,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'qwen-tts': 'Cherry',
   'cosyvoice-tts': COSYVOICE_NO_SYSTEM_VOICE,
   'mimo-tts': MIMO_NO_SYSTEM_VOICE,
+  'yovoice-tts': YOVOICE_NO_VOICE,
   'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
@@ -1452,6 +1494,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'qwen-tts': 'qwen3-tts-flash',
   'cosyvoice-tts': COSYVOICE_TTS_VOICE_CLONE_MODEL,
   'mimo-tts': MIMO_TTS_VOICE_CLONE_MODEL,
+  'yovoice-tts': YOVOICE_DEFAULT_MODEL,
   'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
