@@ -28,6 +28,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import {
   TTS_PROVIDERS,
   DEFAULT_TTS_VOICES,
+  YOVOICE_DEFAULT_MODEL,
   ignoresTTSRate,
   isCosyVoiceCloneVoice,
   resolveTTSModelForVoice,
@@ -133,6 +134,61 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           'default'
         : DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
   const cloneSpeedDisabled = ignoresTTSRate(selectedProviderId, effectiveVoice);
+
+  // yovoice: the "available models" list is dynamic — a model id that merely
+  // exists in the static catalog cannot generate unless it is actually
+  // installed in the yovoice data dir (upstream answers modelRequired). Fetch
+  // the installed ids via the proxy; on any failure fall back to the full
+  // static list (installed === null means unknown, show everything).
+  const [yovoiceInstalled, setYovoiceInstalled] = useState<string[] | null>(null);
+  const yovoiceApiKey =
+    selectedProviderId === 'yovoice-tts'
+      ? ttsProvidersConfig['yovoice-tts']?.apiKey?.trim() || ''
+      : '';
+  useEffect(() => {
+    if (selectedProviderId !== 'yovoice-tts' || !yovoiceApiKey) {
+      setYovoiceInstalled(null);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/generate/yovoice-models', {
+      headers: { 'x-yovoice-key': yovoiceApiKey },
+    })
+      .then((response) => (response.ok ? response.json().catch(() => null) : null))
+      .then((body) => {
+        if (cancelled) return;
+        setYovoiceInstalled(body?.success && Array.isArray(body.installed) ? body.installed : null);
+      })
+      .catch(() => {
+        if (!cancelled) setYovoiceInstalled(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProviderId, yovoiceApiKey]);
+
+  // Auto-heal a stale modelId (e.g. the user picked a model that is not
+  // installed locally, or it was uninstalled later): otherwise every
+  // synthesis dies with a 400 modelRequired from upstream. Read the current
+  // modelId via getState so the correction itself doesn't re-trigger this.
+  useEffect(() => {
+    if (selectedProviderId !== 'yovoice-tts' || !yovoiceInstalled?.length) return;
+    const current =
+      useSettingsStore.getState().ttsProvidersConfig['yovoice-tts']?.modelId?.trim() ||
+      YOVOICE_DEFAULT_MODEL;
+    if (yovoiceInstalled.includes(current)) return;
+    const next = yovoiceInstalled.includes(YOVOICE_DEFAULT_MODEL)
+      ? YOVOICE_DEFAULT_MODEL
+      : yovoiceInstalled[0];
+    setTTSProviderConfig('yovoice-tts', { modelId: next });
+  }, [selectedProviderId, yovoiceInstalled, setTTSProviderConfig]);
+
+  // yovoice: narrow the static catalog down to what is actually installed in
+  // the local yovoice data dir (null = unknown / unreachable → show all).
+  const visibleModels =
+    selectedProviderId === 'yovoice-tts' && yovoiceInstalled
+      ? manuallySelectableModels.filter((model) => yovoiceInstalled.includes(model.id))
+      : manuallySelectableModels;
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -594,11 +650,11 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       )}
 
       {/* Available Models */}
-      {manuallySelectableModels.length > 0 && !isVoxCPM && (
+      {visibleModels.length > 0 && !isVoxCPM && (
         <div className="space-y-2">
           <Label className="text-sm text-muted-foreground">{t('settings.availableModels')}</Label>
           <div className="flex flex-wrap gap-2">
-            {manuallySelectableModels.map((model) => (
+            {visibleModels.map((model) => (
               <div
                 key={model.id}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 border border-border/40 text-xs font-mono text-muted-foreground"
