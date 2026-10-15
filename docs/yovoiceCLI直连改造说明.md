@@ -110,7 +110,7 @@ yovoice generate --text "测试文本。" --voice 80f400d64d3ce1caf23342279f06e7
 
 | 端点 | 实现 |
 | --- | --- |
-| `POST /v1/generate` `{text, modelId, voiceId}` | 串行队列 → 写临时文本 → spawn `yovoice generate --voice <完整id> --model <id>` → 回 `audio/wav`；并发 409；客户端断开 kill 子进程；超时 504（默认 10min）；voiceId 查不到 400 |
+| `POST /v1/generate` `{text, modelId, voiceId}` | 串行队列 → 写临时文本 → spawn `yovoice generate --voice <完整id> --model <id>` → 回 `audio/wav`；并发 409；客户端断开 kill 子进程；超时 504（默认 10min）；voiceId 查不到 400；**voiceId 空/`'default'`/哨兵 → 自动兜底为注册表最新音色（默认音色，无需手动选）** |
 | `GET /v1/voices` | 读 `state.json` 的 `voices` 数组返回 |
 | `POST /v1/voices?name=` | 音频体 ≤20MB、wav 1–60s 校验 → 存 `voices\<id>.<ext>` + 原子更新 `state.json` → 返回更新后数组 |
 | `GET /v1/models` | spawn `models list --json`（60s 缓存） |
@@ -186,6 +186,11 @@ start "yovoice-serve" /min "C:\Users\zfsnc\yovoice-cli\yovoice.exe" serve --data
 7. **音色删除无官方入口**：文件层操作（删 `voices\<id>.wav` + 移除 `state.json`
    条目），shim 运行中也可做（shim 每次请求现读 state.json，无缓存）。
 8. **psql / 容器内无 curl**：容器内链路测试用 `docker exec openmaic-new node -e ...`。
+9. **默认音色（2026-10-15 17:15 增补）**：shim 把空/`'default'`/`__yovoice` 哨兵
+   voiceId 兜底为注册表**最新音色**；3002 设置面板在存储选择悬空时自动 pin 最新
+   音色并持久化（fork tts-settings.tsx，对齐 MiMo 范式）。**重新上传样本会换
+   新 id，但不再需要手动重选**。克隆生成请用 voxcpm2-orig（omni 走 voiceId 会
+   报 `omniReferenceRequired`，shim 如实转发 400）。
 
 ---
 

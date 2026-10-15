@@ -30,7 +30,13 @@ import os, hashlib, sys, json, fnmatch
 root, out = sys.argv[1], sys.argv[2]
 SKIP = {'node_modules','.next','.git','.codegraph','data','test-results',
         'playwright-report','blob-report','coverage','.workbuddy','dist'}
-XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt','tts_proxy.py'}
+XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt','tts_proxy.py',
+         'server-providers.yml'}
+# ⚠️ `server-providers.yml`（2026-10-15 15:01 起出现在现场根目录）是**现场独有
+#    的服务端 provider 配置**（lib/server/provider-config.ts 运行时读取；当前
+#    内容 = voxcpm-tts 免钥 baseUrl → host.docker.internal:8000）。机器特定，
+#    不进 fork 仓库；在快照层忽略，否则漂移校验每轮被「仅现场=1」阻断。
+#    （与 tts_proxy.py 同判例：文件保留在现场，未删除。）
 # ⚠️ `tts_proxy.py`（2026-10-09 留在现场的火山引擎 TTS 代理脚本）是**现场独有
 #    的开发工具**，且内嵌火山引擎凭证 ⇒ 既不是源码，也绝不能进 fork git 仓库或
 #    镜像构建上下文。它与 `历史副本*` 同属「现场噪音」：在快照层忽略，否则每轮

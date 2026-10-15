@@ -130,3 +130,9 @@ serve HTTP 层丢 voxcpm2 voiceId（§7），而 CLI 直连已实锤真克隆 �
 - 坑：① 每请求 CLI 冷启动 ≈9s（0.64s 音频总耗时 10s 实测）；② 桌面应用与
   shim 依旧互斥（共用数据目录）；③ shim 挂 = 3002 yovoice 不可用（与 serve 同）；
   ④ 上传的新音色注册表条目无 `referenceText`——若克隆异常可按 §6 手工补逐字稿。
+- ⭐ **默认音色兜底（17:15 增补）**：shim 把空 / `'default'` / `__yovoice` 哨兵
+  voiceId 自动解析为**注册表最新音色**（对齐 MiMo 自动 pin 范式）；设置面板
+  `YovoiceVoiceManager` 在存储选择悬空（重新上传会换新 id）时自动 pin 最新音色
+  并持久化（fork tts-settings.tsx）。重新上传样本后不再需要手动重选。
+  ⚠️ omni 模型走 voiceId 会报 `omniReferenceRequired`（要求参考音频），克隆
+  请用 voxcpm2-orig；shim 对该错误如实 400 转发，不静默回退。
