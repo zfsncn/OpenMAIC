@@ -2182,6 +2182,24 @@ function YovoiceVoiceManager() {
     void refresh(apiKey);
   }, [refresh, apiKey]);
 
+  // yovoice: auto-pin the latest server-side voice when the stored selection is
+  // empty/sentinel/stale — a re-upload always mints a new id, which used to
+  // leave the checkmark unset ("have to pick it every time"). Mirrors the MiMo
+  // default-voice resolution (4a3fc920). Only fires while yovoice is the
+  // active TTS provider, so browsing the panel never hijacks another
+  // provider's voice. Client-side persistence; the shim additionally resolves
+  // an empty/'default' voiceId to the latest registry voice at generation time.
+  useEffect(() => {
+    if (ttsProviderId !== 'yovoice-tts' || !voices.length) return;
+    const stored = ttsVoice?.trim() || '';
+    const valid =
+      stored !== 'default' &&
+      !stored.startsWith('__yovoice') &&
+      voices.some((v) => v.id === stored);
+    if (valid) return;
+    setTTSVoice(voices[voices.length - 1].id);
+  }, [ttsProviderId, ttsVoice, voices, setTTSVoice]);
+
   const selectVoice = (voiceId: string) => {
     if (ttsProviderId !== 'yovoice-tts') setTTSProvider('yovoice-tts');
     setTTSVoice(voiceId);
