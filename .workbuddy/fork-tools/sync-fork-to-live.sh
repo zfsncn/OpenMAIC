@@ -31,7 +31,7 @@ root, out = sys.argv[1], sys.argv[2]
 SKIP = {'node_modules','.next','.git','.codegraph','data','test-results',
         'playwright-report','blob-report','coverage','.workbuddy','dist'}
 XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt','tts_proxy.py',
-         'server-providers.yml'}
+         'server-providers.yml','start-3002-after-reboot.cmd'}
 # ⚠️ `server-providers.yml`（2026-10-15 15:01 起出现在现场根目录）是**现场独有
 #    的服务端 provider 配置**（lib/server/provider-config.ts 运行时读取；当前
 #    内容 = voxcpm-tts 免钥 baseUrl → host.docker.internal:8000）。机器特定，
