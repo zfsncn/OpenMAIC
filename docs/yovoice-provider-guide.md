@@ -68,3 +68,10 @@ curl -X POST -H "Authorization: Bearer $YOVOICE_API_TOKEN" \
 - 备份位置：`D:\soft\yovoice\backup-20261015\`（state.json.bak + 3 个 wav）。
 - 验证：`GET /v1/voices` 与 3002 代理均只剩 2 条 20261008；`voxcpm2-orig + b3efc9fa` 真实合成 200 WAV（245KB）。
 
+## 6.1 二次清理：删除全部音色 + 登记 omnivoice-bf16（2026-10-15）
+
+- 应用户要求删除仅剩的两条 `20261008`（b3efc9fa / d10ee9a6），音色池清零；备份 `state.json.before-20261008-delete.bak` + 2 个 wav 同在 `backup-20261015\`。**清零后测试 TTS/配音会 400 `YOVOICE_VOICE_REQUIRED`，直到重新上传参考音频。**
+- `models import D:\soft\yovoice\models\omnivoice-bf16.gguf` 登记成功 → installed = `['voxcpm2-orig','omnivoice-bf16']`（该 gguf 文件之前虽在 models 目录但未登记，故面板芯片不出现、生成报 modelRequired）。
+- ⚠️ models 目录里**文件存在 ≠ 已安装**：登记表在 state.json，必须 `models import` 才算数。
+
+
