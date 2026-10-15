@@ -1534,6 +1534,7 @@
     "cosyvoiceCloneVoicesTitle": "CosyVoice Cloned Voices",
     "cosyvoiceCloneRefAudioHint": "Upload or record a real-speech MP3 clip (10–30 s recommended). The sample is verified by speech recognition on the server, so pure tones or silence are rejected. No transcript is needed.",
     "cosyvoiceTestRequiresVoice": "Add a cloned voice first — this provider can only speak voices you enroll.",
+    "mimoTestRequiresVoice": "Clone a voice first — MiMo can only speak voices replicated from your sample (the newest clone is used by default).",
     "mimoVoicesTitle": "MiMo Voices",
     "mimoVoicesHint": "Upload an audio sample to clone a voice — the material stays on this device, travels with every synthesis request, and deleting a profile removes it completely.",
     "mimoTabClone": "Clone a voice",

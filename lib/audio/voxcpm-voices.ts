@@ -651,18 +651,23 @@ export function useMiMoVoiceProfiles() {
  * `fallbackStyle` is the agent-level style instruction (the discussion path);
  * a clone profile's own stylePrompt wins over it (per-voice > per-agent).
  *
- * CLONE-ONLY degradation: anything that is not a live clone profile (a stale
- * non-profile id, a profile deleted mid-session, a retired design profile)
- * comes back as `voiceMode:'clone'` WITHOUT a sample, so the route pre-check
- * fails with a named 400 instead of silently speaking with some other voice.
- * There is no system voice left to fall back to.
+ * CLONE-ONLY default voice: a clone-only provider must still have a usable
+ * default. Anything that is not a live clone profile (the
+ * `MIMO_NO_SYSTEM_VOICE` sentinel, a stale non-profile id, a profile deleted
+ * mid-session, a retired design profile) resolves to the NEWEST live clone
+ * profile — mirroring the settings pool's auto-select. Only when no clone
+ * profile exists at all does the request degrade to `voiceMode:'clone'`
+ * without a sample, failing the route pre-check with a named 400.
  */
 export async function getMiMoProviderOptions(
   voiceId: string,
   fallback?: { styleInstruction?: string },
 ): Promise<MimoProviderOptions> {
   const profileId = getMiMoProfileIdFromVoiceId(voiceId);
-  const profile = profileId ? await db.voiceProfiles.get(profileId) : undefined;
+  let profile = profileId ? await db.voiceProfiles.get(profileId) : undefined;
+  if (!(profile && profile.kind === 'clone' && profile.referenceAudio)) {
+    profile = await getNewestMiMoCloneProfile();
+  }
   if (profile && profile.kind === 'clone' && profile.referenceAudio) {
     return {
       voiceMode: 'clone',
@@ -676,4 +681,18 @@ export async function getMiMoProviderOptions(
     voiceMode: 'clone',
     ...(fallback?.styleInstruction ? { styleInstruction: fallback.styleInstruction } : {}),
   };
+}
+
+/**
+ * The provider's default voice: the most recently updated live clone profile
+ * ("newest wins", the same ordering the settings pool renders with). The
+ * sample bytes live only in this browser's IndexedDB, so this fallback can
+ * only ever run client-side — server/batch callers must pass an explicit
+ * voice + sample.
+ */
+async function getNewestMiMoCloneProfile(): Promise<VoiceProfileRecord | undefined> {
+  const rows = await db.voiceProfiles.where('providerId').equals(MIMO_TTS_PROVIDER_ID).toArray();
+  return rows
+    .filter((row) => row.kind === 'clone' && row.referenceAudio)
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0];
 }

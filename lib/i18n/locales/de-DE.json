@@ -1534,6 +1534,7 @@
     "cosyvoiceCloneVoicesTitle": "CosyVoice Klone-Stimmen",
     "cosyvoiceCloneRefAudioHint": "Laden Sie einen echten Sprach-MP3-Clip hoch oder nehmen Sie einen auf (10–30 s empfohlen). Die Probe wird serverseitig per Spracherkennung geprüft; reine Töne oder Stille werden abgelehnt. Kein Transkript nötig.",
     "cosyvoiceTestRequiresVoice": "Fügen Sie zuerst eine geklonte Stimme hinzu — dieser Dienst kann nur von Ihnen erstellte Stimmen sprechen.",
+    "mimoTestRequiresVoice": "Klonen Sie zuerst eine Stimme — MiMo kann nur Stimmen sprechen, die aus Ihrer Probe repliziert wurden (standardmäßig wird der neueste Klon verwendet).",
     "mimoVoicesTitle": "MiMo-Stimmen",
     "mimoVoicesHint": "Laden Sie eine Audioaufnahme hoch, um eine Stimme zu klonen — das Material bleibt auf diesem Gerät, wird bei jeder Synthese mitgesendet und ist mit dem Löschen des Profils restlos entfernt.",
     "mimoTabClone": "Stimme klonen",

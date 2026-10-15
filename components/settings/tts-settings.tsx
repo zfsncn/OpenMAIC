@@ -92,6 +92,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   // Enrolled CosyVoice clones, so the "test TTS" guard can tell "nothing
   // cloned yet" apart from "cloned but not selected".
   const { profiles: cosyProfiles } = useCosyVoiceProfiles();
+  // Same for MiMo: the guard only needs to know whether any clone exists —
+  // the default-voice fallback resolves the sample on its own when one does.
+  const { profiles: mimoProfiles } = useMiMoVoiceProfiles();
 
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
@@ -184,6 +187,14 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           ? t('settings.cosyvoiceTestSelectVoice')
           : t('settings.cosyvoiceTestRequiresVoice'),
       );
+      return;
+    }
+
+    // MiMo auto-resolves its default voice (newest clone profile), so a
+    // failed test here can only mean "nothing cloned at all".
+    if (selectedProviderId === 'mimo-tts' && !mimoProfiles.some((p) => p.kind === 'clone')) {
+      setTestStatus('error');
+      setTestMessage(t('settings.mimoTestRequiresVoice'));
       return;
     }
 
@@ -2074,6 +2085,27 @@ function MimoVoiceManager() {
   useEffect(() => {
     if (!previewing) setPreviewingVoiceId(null);
   }, [previewing]);
+
+  // Clone-only default voice: while this panel is open, any active voice that
+  // is not a live clone profile (the sentinel on first run, a retired design
+  // profile, a deleted one) is re-pinned to the newest clone profile and
+  // persisted — the user never has to re-pick the voice after the first
+  // clone. Generation paths get the same fallback inside
+  // getMiMoProviderOptions, so this effect is a visible mirror of it.
+  useEffect(() => {
+    const currentIsLive =
+      ttsProviderId === 'mimo-tts' &&
+      profiles.some(
+        (profile) => profile.kind === 'clone' && getMiMoProfileVoiceId(profile.id) === ttsVoice,
+      );
+    if (currentIsLive) return;
+    const newest = [...profiles]
+      .filter((profile) => profile.kind === 'clone')
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (!newest) return;
+    if (ttsProviderId !== 'mimo-tts') setTTSProvider('mimo-tts');
+    setTTSVoice(getMiMoProfileVoiceId(newest.id));
+  }, [profiles, ttsProviderId, ttsVoice, setTTSProvider, setTTSVoice]);
 
   const handleAdd = async () => {
     if (!name.trim()) return;

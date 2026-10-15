@@ -1534,6 +1534,7 @@
     "cosyvoiceCloneVoicesTitle": "Vozes clonadas do CosyVoice",
     "cosyvoiceCloneRefAudioHint": "Envie ou grave um clipe MP3 de fala real (10–30 s recomendado). A amostra é verificada por reconhecimento de fala no servidor; tons puros ou silêncio são rejeitados. Não é necessária transcrição.",
     "cosyvoiceTestRequiresVoice": "Adicione primeiro uma voz clonada — este serviço só fala vozes que você clonar.",
+    "mimoTestRequiresVoice": "Primeiro clone uma voz — o MiMo só pode falar com vozes replicadas da sua amostra (o clone mais recente é usado por padrão).",
     "mimoVoicesTitle": "Vozes MiMo",
     "mimoVoicesHint": "Envie uma amostra de áudio para clonar uma voz — o material fica neste dispositivo, acompanha cada síntese e excluir o perfil o remove por completo.",
     "mimoTabClone": "Clonar uma voz",

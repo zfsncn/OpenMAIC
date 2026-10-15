@@ -1534,6 +1534,7 @@
     "cosyvoiceCloneVoicesTitle": "Giọng nói nhân bản CosyVoice",
     "cosyvoiceCloneRefAudioHint": "Tải lên hoặc ghi âm một đoạn MP3 giọng nói thật (khuyến nghị 10–30 giây). Mẫu sẽ được kiểm tra bằng nhận dạng giọng nói phía máy chủ; âm thuần hoặc im lặng sẽ bị từ chối. Không cần bản chép lời.",
     "cosyvoiceTestRequiresVoice": "Hãy thêm giọng nhân bản trước — dịch vụ này chỉ dùng được giọng do bạn nhân bản.",
+    "mimoTestRequiresVoice": "Hãy nhân bản một giọng nói trước — MiMo chỉ có thể nói bằng giọng được tái tạo từ mẫu của bạn (bản nhân bản mới nhất được dùng mặc định).",
     "mimoVoicesTitle": "Giọng MiMo",
     "mimoVoicesHint": "Tải lên một đoạn âm thanh để nhân bản giọng nói — tài liệu chỉ lưu trên thiết bị này, đi kèm mỗi yêu cầu tổng hợp, và xóa hồ sơ sẽ xóa hoàn toàn.",
     "mimoTabClone": "Nhân bản giọng",
