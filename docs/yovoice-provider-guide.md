@@ -74,4 +74,36 @@ curl -X POST -H "Authorization: Bearer $YOVOICE_API_TOKEN" \
 - `models import D:\soft\yovoice\models\omnivoice-bf16.gguf` 登记成功 → installed = `['voxcpm2-orig','omnivoice-bf16']`（该 gguf 文件之前虽在 models 目录但未登记，故面板芯片不出现、生成报 modelRequired）。
 - ⚠️ models 目录里**文件存在 ≠ 已安装**：登记表在 state.json，必须 `models import` 才算数。
 
+## 7. 🔴 克隆真相：voiceId 路径默认不生效，须注册表补原文（2026-10-15 实验）
+
+**现象**：用户报告「测试 TTS 不像上传的 20261008 音色」。F0（基频）分析 + 字节比对定位：
+
+| 实验 | 结果 | 结论 |
+| --- | --- | --- |
+| voxcpm2 HTTP 带 voiceId vs 不带 | 输出**逐字节相同**（307244B） | voiceId 被静默忽略，回退默认音（F0 259Hz） |
+| 假 voiceId | 200 不报错 | 上游无校验 |
+| voxcpm2 + voiceId + 请求级 `referenceText` | 仍默认音 | 请求级原文救不了 voiceId 路径 |
+| CLI `--voice <id>` | 报 `voiceRequired` | 注册表音色在 CLI 生成时解析不到 |
+| CLI `--reference 文件`（无原文） | 仍默认音 | 纯参考音频克隆不生效 |
+| CLI `--reference 文件 + --reference-text 原文` | F0 移向参考音 | ✅ 唯一原生有效路径 |
+| **注册表补 `referenceText` 后 omni + voiceId** | F0 253Hz IQR(212-282) ≈ 参考 255Hz(209-320) | ✅ **omni 真克隆激活** |
+| 同法 voxcpm2 | 仍默认音 | voxcpm2 的 HTTP voiceId 路径彻底无效 |
+
+**根因**：该引擎（v0.2.0）克隆是「需要参考原文的 continuation 式」。`POST /v1/voices` 无 transcript 字段 → 注册音色天生缺原文 → 生成时静默回退默认音（HTTP 不报错、CLI 报错）。
+
+**修复（对 omnivoice-bf16 有效）**：停 serve → 备份 → 在 `state.json` 音色条目手工加 `"referenceText": "<样本逐字稿>"`（同时加了 `transcript`/`text` 两个候选字段）→ 重启 serve。逐字稿存 `D:\soft\yovoice\backup-20261015\20261008-transcript.txt`。
+
+**使用结论（3002 侧）**：
+- **OmniVoice (bf16) 芯片 = 真克隆**（20261008），可用；
+- **VoxCPM2 (orig) 芯片 = 模型默认设计音**（voiceId 路径坏，仅 CLI `--reference --reference-text` 可克隆）——面板选它会听到默认音，不是 bug 回归；
+- 此前 yovoice 接入以来所有「克隆」输出实际都是默认音；MiMo/CosyVoice 的克隆一直是真的。
+- 候选上游 issue：附 A≡C 字节级复现 + CLI voiceRequired + reference-text 对照。
+
+## 8. 实验记录归档
+
+- 逐字稿：`D:\soft\yovoice\backup-20261015\20261008-transcript.txt`（用户提供，无标点连写）。
+- 实验产物：`D:\OpenMAIC\.workbuddy\tmp\clip{A..N}*.wav`、`probe-*.wav`、`f0-analyze.py`（纯 Python F0 分析，无 numpy 依赖）。
+- F0 判定基线：参考样本 255Hz(209-320)；voxcpm2 默认音 259Hz；omni 默认音 198Hz；CLI 精细克隆（198Hz 参考）→ 217Hz。
+
+
 
