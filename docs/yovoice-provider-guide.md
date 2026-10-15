@@ -93,11 +93,11 @@ curl -X POST -H "Authorization: Bearer $YOVOICE_API_TOKEN" \
 
 **修复（对 omnivoice-bf16 有效）**：停 serve → 备份 → 在 `state.json` 音色条目手工加 `"referenceText": "<样本逐字稿>"`（同时加了 `transcript`/`text` 两个候选字段）→ 重启 serve。逐字稿存 `D:\soft\yovoice\backup-20261015\20261008-transcript.txt`。
 
-**使用结论（3002 侧）**：
-- **OmniVoice (bf16) 芯片 = 真克隆**（20261008），可用；
-- **VoxCPM2 (orig) 芯片 = 模型默认设计音**（voiceId 路径坏，仅 CLI `--reference --reference-text` 可克隆）——面板选它会听到默认音，不是 bug 回归；
-- 此前 yovoice 接入以来所有「克隆」输出实际都是默认音；MiMo/CosyVoice 的克隆一直是真的。
-- 候选上游 issue：附 A≡C 字节级复现 + CLI voiceRequired + reference-text 对照。
+**使用结论（3002 侧，最终版——用户盲听裁决 2026-10-15）**：
+- 用户盲听 A（omni 补原文）/B（omni 默认）/C（voxcpm2 输出）/D（参考样本）四段：**全部互不相同**。即 omni 补原文后确实消费了参考音频（A≠B，F0 也吻合），但产出的是「既非默认音、也非目标音色」的第三种声音——**F0 对了、音色不对，克隆质量不可用**。
+- **最终定论：yovoice v0.2.0 两个模型的 HTTP voiceId 路径均无法产出目标音色**（voxcpm2=纯默认音；omni=低质量第三声）。3002 上 yovoice 只能作「本地默认音/备用」，**真克隆只有 MiMo / CosyVoice**。
+- 此前 yovoice 接入以来所有「克隆」输出实际都是非目标音色；MiMo/CosyVoice 的克隆一直是真的。
+- 候选上游 issue：附 A≡C 字节级复现 + CLI voiceRequired + reference-text 对照 + 四段盲听结论。
 
 ## 8. 实验记录归档
 
