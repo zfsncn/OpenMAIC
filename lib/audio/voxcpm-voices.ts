@@ -571,15 +571,14 @@ export async function getVoxCPMProviderOptions(
 /**
  * MiMo-V2.5-TTS voice profiles — STATELESS counterpart of the registration-based
  * managers above. MiMo has no enrollment API: every synthesis request carries
- * its voice material inline (a preset name, a text description, or a base64
- * sample). IndexedDB is therefore the only persistence; deleting a profile is
- * complete and there is no vendor cleanup, no quota.
+ * its voice material inline as a base64 sample. IndexedDB is therefore the
+ * only persistence; deleting a profile is complete and there is no vendor
+ * cleanup, no quota.
  *
- * kind taxonomy (fits VoiceProfileRecord as-is):
- *   'prompt' → design profile: `voicePrompt` holds the voice DESCRIPTION text
- *              (the `user` message of the voicedesign model).
- *   'clone'  → clone profile: `referenceAudio` holds the sample Blob, passed
- *              inline per request. No transcript — MiMo embeds the clip directly.
+ * CLONE-ONLY (2026-10-15): only kind='clone' profiles are created. Legacy
+ * kind='prompt' rows (voice-design profiles) are retired — `profiles` still
+ * lists them so settings can show a retired row the user can delete, but no
+ * read path routes them anywhere.
  */
 export function useMiMoVoiceProfiles() {
   const [profiles, setProfiles] = useState<VoiceProfileRecord[]>([]);
@@ -604,27 +603,6 @@ export function useMiMoVoiceProfiles() {
     window.addEventListener(VOICE_PROFILES_CHANGED, refresh);
     return () => window.removeEventListener(VOICE_PROFILES_CHANGED, refresh);
   }, [refresh]);
-
-  /** A design profile: name + free-text voice description. */
-  const addDesignVoice = useCallback(
-    async (input: { name: string; description: string }) => {
-      const now = Date.now();
-      const id = createId();
-      await db.voiceProfiles.put({
-        id,
-        providerId: MIMO_TTS_PROVIDER_ID,
-        kind: 'prompt',
-        name: input.name.trim() || input.description.trim().slice(0, 20),
-        voicePrompt: input.description.trim(),
-        createdAt: now,
-        updatedAt: now,
-      });
-      await refresh();
-      notifyVoiceProfilesChanged();
-      return getMiMoProfileVoiceId(id);
-    },
-    [refresh],
-  );
 
   /** A clone profile: name + reference audio sample (kept exactly as supplied). */
   const addCloneVoice = useCallback(
@@ -662,7 +640,7 @@ export function useMiMoVoiceProfiles() {
     [refresh],
   );
 
-  return { profiles, loading, refresh, addDesignVoice, addCloneVoice, deleteVoice };
+  return { profiles, loading, refresh, addCloneVoice, deleteVoice };
 }
 
 /**
@@ -672,28 +650,20 @@ export function useMiMoVoiceProfiles() {
  *
  * `fallbackStyle` is the agent-level style instruction (the discussion path);
  * a clone profile's own stylePrompt wins over it (per-voice > per-agent).
+ *
+ * CLONE-ONLY degradation: anything that is not a live clone profile (a stale
+ * non-profile id, a profile deleted mid-session, a retired design profile)
+ * comes back as `voiceMode:'clone'` WITHOUT a sample, so the route pre-check
+ * fails with a named 400 instead of silently speaking with some other voice.
+ * There is no system voice left to fall back to.
  */
 export async function getMiMoProviderOptions(
   voiceId: string,
   fallback?: { styleInstruction?: string },
 ): Promise<MimoProviderOptions> {
-  if (!isMiMoProfileVoiceId(voiceId)) {
-    // Preset (or stale) id: catalog model, optional agent style instruction.
-    return {
-      voiceMode: 'preset',
-      ...(fallback?.styleInstruction ? { styleInstruction: fallback.styleInstruction } : {}),
-    };
-  }
   const profileId = getMiMoProfileIdFromVoiceId(voiceId);
-  if (!profileId) return { voiceMode: 'preset' };
-  const profile = await db.voiceProfiles.get(profileId);
-  if (!profile) {
-    // The picker still offers a deleted profile mid-session; speaking with the
-    // default preset beats a hard failure, matching VoxCPM's missing-profile
-    // degradation to auto voice.
-    return { voiceMode: 'preset' };
-  }
-  if (profile.kind === 'clone' && profile.referenceAudio) {
+  const profile = profileId ? await db.voiceProfiles.get(profileId) : undefined;
+  if (profile && profile.kind === 'clone' && profile.referenceAudio) {
     return {
       voiceMode: 'clone',
       referenceAudioBase64: await blobToBase64(profile.referenceAudio),
@@ -703,13 +673,7 @@ export async function getMiMoProviderOptions(
     };
   }
   return {
-    voiceMode: 'design',
-    voicePrompt: profile.voicePrompt || profile.name,
-    styleInstruction: fallback?.styleInstruction,
+    voiceMode: 'clone',
+    ...(fallback?.styleInstruction ? { styleInstruction: fallback.styleInstruction } : {}),
   };
-}
-
-// Local import-cycle-free predicate (mimo.ts exports the codec, not the guard).
-function isMiMoProfileVoiceId(voiceId: string): boolean {
-  return voiceId.startsWith('mimo:profile:');
 }

@@ -2042,14 +2042,20 @@ function AddVoiceRow({
 }
 
 /**
- * MiMo-V2.5-TTS voice manager — a STATELESS provider: no enrollment round
- * trip, no vendor ids. Both tabs create LOCAL profiles (IndexedDB); every
- * synthesis carries the material inline. Adding a voice is therefore
- * instant and offline-safe; the first preview is the first network call.
+ * MiMo-V2.5-TTS voice manager — a STATELESS, CLONE-ONLY provider: no
+ * enrollment round trip, no vendor ids, and no system voices (the preset
+ * catalog and the voice-design model were removed 2026-10-15). Adding a voice
+ * creates a LOCAL clone profile (IndexedDB); every synthesis carries the
+ * reference sample inline. Adding a voice is therefore instant and
+ * offline-safe; the first preview is the first network call.
+ *
+ * Retired rows: profiles created by the removed "voice design" tab
+ * (kind='prompt') are still listed — muted, preview-disabled, not selectable —
+ * so the user can find and delete them. Nothing routes them anymore.
  */
 function MimoVoiceManager() {
   const { t } = useI18n();
-  const { profiles, addDesignVoice, addCloneVoice, deleteVoice } = useMiMoVoiceProfiles();
+  const { profiles, addCloneVoice, deleteVoice } = useMiMoVoiceProfiles();
   const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
@@ -2058,9 +2064,7 @@ function MimoVoiceManager() {
   const { previewing, startPreview, stopPreview } = useTTSPreview();
 
   const providerConfig = ttsProvidersConfig['mimo-tts'];
-  const [tab, setTab] = useState<'design' | 'clone'>('design');
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
   const [styleInstruction, setStyleInstruction] = useState('');
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -2076,25 +2080,20 @@ function MimoVoiceManager() {
       toast.error(t('settings.cloneApiKeyRequired'));
       return;
     }
-    if (tab === 'design' && !description.trim()) return;
-    if (tab === 'clone' && !referenceFile) return;
+    if (!referenceFile) return;
     setSaving(true);
     try {
-      const voiceId =
-        tab === 'design'
-          ? await addDesignVoice({ name, description })
-          : await addCloneVoice({
-              name,
-              referenceAudio: referenceFile as File,
-              styleInstruction,
-            });
+      const voiceId = await addCloneVoice({
+        name,
+        referenceAudio: referenceFile as File,
+        styleInstruction,
+      });
       if (ttsProviderId !== 'mimo-tts') setTTSProvider('mimo-tts');
       setTTSVoice(voiceId);
       setName('');
-      setDescription('');
       setStyleInstruction('');
       setReferenceFile(null);
-      toast.success(t(tab === 'design' ? 'settings.mimoDesignAdded' : 'settings.mimoCloneAdded'));
+      toast.success(t('settings.mimoCloneAdded'));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('settings.cosyvoiceCloneSaveFailed'));
     } finally {
@@ -2154,32 +2153,6 @@ function MimoVoiceManager() {
         <p className="mt-1 text-xs text-muted-foreground">{t('settings.mimoVoicesHint')}</p>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="flex gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
-          {(['design', 'clone'] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setTab(key)}
-              className={cn(
-                'flex-1 rounded-md px-3 py-1.5 text-sm transition-colors',
-                tab === key
-                  ? 'bg-background font-medium shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t(key === 'design' ? 'settings.mimoTabDesign' : 'settings.mimoTabClone')}
-            </button>
-          ))}
-        </div>
-        <Button onClick={() => void handleAdd()} disabled={saving || !name.trim()} size="default">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          <span className="ml-1">
-            {t(tab === 'design' ? 'settings.mimoTabDesign' : 'settings.mimoTabClone')}
-          </span>
-        </Button>
-      </div>
-
       <div className="space-y-2 rounded-lg border border-border/60 p-3">
         <Input
           value={name}
@@ -2187,43 +2160,35 @@ function MimoVoiceManager() {
           placeholder={t('settings.voiceNamePlaceholder')}
           className="text-sm"
         />
-        {tab === 'design' ? (
-          <>
-            <Textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder={t('settings.mimoDesignPlaceholder')}
-              rows={3}
-              className="text-sm"
-            />
-            <p className="text-xs text-muted-foreground">{t('settings.mimoDesignHint')}</p>
-          </>
-        ) : (
-          <>
-            <label className="inline-flex h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground">
-              <Upload className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 truncate">
-                {referenceFile ? referenceFile.name : t('settings.cosyvoiceCloneUploadShort')}
-              </span>
-              <input
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={(event) => {
-                  void handleFileChange(event.target.files?.[0] || null);
-                  event.target.value = '';
-                }}
-              />
-            </label>
-            <Textarea
-              value={styleInstruction}
-              onChange={(event) => setStyleInstruction(event.target.value)}
-              placeholder={t('settings.mimoStyleOptional')}
-              rows={2}
-              className="text-sm"
-            />
-          </>
-        )}
+        <label className="inline-flex h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground">
+          <Upload className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 truncate">
+            {referenceFile ? referenceFile.name : t('settings.cosyvoiceCloneUploadShort')}
+          </span>
+          <input
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleFileChange(event.target.files?.[0] || null);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <Textarea
+          value={styleInstruction}
+          onChange={(event) => setStyleInstruction(event.target.value)}
+          placeholder={t('settings.mimoStyleOptional')}
+          rows={2}
+          className="text-sm"
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <Button onClick={() => void handleAdd()} disabled={saving || !name.trim()} size="default">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          <span className="ml-1">{t('settings.mimoTabClone')}</span>
+        </Button>
       </div>
 
       {profiles.length > 0 && (
@@ -2235,37 +2200,45 @@ function MimoVoiceManager() {
             </span>
           </div>
           <div className="max-h-[280px] overflow-y-auto">
-            {profiles.map((profile) => (
-              <VoiceProfileRow
-                key={profile.id}
-                icon={
-                  profile.kind === 'clone' ? (
-                    <FileAudio className="h-4 w-4" />
-                  ) : (
-                    <Wand2 className="h-4 w-4" />
-                  )
-                }
-                title={profile.name}
-                badge={t(
-                  profile.kind === 'clone' ? 'settings.voxcpmClone' : 'settings.mimoDesignBadge',
-                )}
-                detail={
-                  profile.kind === 'clone'
-                    ? profile.referenceAudioName || profile.id
-                    : profile.voicePrompt || profile.id
-                }
-                kind={profile.kind === 'clone' ? 'clone' : 'prompt'}
-                selected={ttsProviderId === 'mimo-tts' && ttsVoice === profile.id}
-                onSelect={() => {
-                  if (ttsProviderId !== 'mimo-tts') setTTSProvider('mimo-tts');
-                  setTTSVoice(profile.id);
-                  toast.success(t('settings.cloneVoiceActivated'));
-                }}
-                previewing={previewingVoiceId === profile.id}
-                onPreview={() => void handlePreview(profile.id)}
-                onDelete={() => void deleteVoice(profile.id)}
-              />
-            ))}
+            {profiles.map((profile) => {
+              // Retired voice-design profiles (kind='prompt'): keep them
+              // visible for cleanup, but nothing can speak them anymore.
+              const retired = profile.kind !== 'clone';
+              return (
+                <VoiceProfileRow
+                  key={profile.id}
+                  icon={retired ? <Wand2 className="h-4 w-4" /> : <FileAudio className="h-4 w-4" />}
+                  title={profile.name}
+                  badge={retired ? t('settings.mimoDesignRetired') : t('settings.voxcpmClone')}
+                  badgeTone={retired ? 'warning' : 'neutral'}
+                  detail={
+                    retired
+                      ? profile.voicePrompt || profile.id
+                      : profile.referenceAudioName || profile.id
+                  }
+                  kind={retired ? 'prompt' : 'clone'}
+                  muted={retired}
+                  selected={!retired && ttsProviderId === 'mimo-tts' && ttsVoice === profile.id}
+                  previewing={previewingVoiceId === profile.id}
+                  previewDisabled={retired}
+                  previewDisabledTitle={t('settings.mimoDesignRetired')}
+                  onSelect={
+                    retired
+                      ? undefined
+                      : () => {
+                          if (ttsProviderId !== 'mimo-tts') setTTSProvider('mimo-tts');
+                          setTTSVoice(profile.id);
+                          toast.success(t('settings.cloneVoiceActivated'));
+                        }
+                  }
+                  onPreview={() => {
+                    if (retired) return;
+                    void handlePreview(profile.id);
+                  }}
+                  onDelete={() => void deleteVoice(profile.id)}
+                />
+              );
+            })}
           </div>
         </div>
       )}

@@ -99,23 +99,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // MiMo pre-flight (same two-layer defense as voxcpm:auto above): a design
-    // voice without its description or a clone voice without its sample can
-    // only fail deep in the adapter; name the missing half here.
+    // MiMo pre-flight (same two-layer defense as voxcpm:auto above): the
+    // provider is clone-only, so a request whose reference sample did not
+    // accompany the options can only fail deep in the adapter — name the
+    // missing half here instead of letting a stale/deleted voice id silently
+    // degrade (there is no system voice to fall back to anymore).
     if (ttsProviderId === MIMO_TTS_PROVIDER_ID) {
       const mimoMode =
         typeof ttsProviderOptions?.voiceMode === 'string' ? ttsProviderOptions.voiceMode : '';
-      const mimoDescription =
-        typeof ttsProviderOptions?.voicePrompt === 'string' ? ttsProviderOptions.voicePrompt : '';
       const mimoSample =
         typeof ttsProviderOptions?.referenceAudioBase64 === 'string'
           ? ttsProviderOptions.referenceAudioBase64
           : '';
-      if (mimoMode === 'design' && !mimoDescription.trim()) {
-        return apiError('MIMO_DESIGN_REQUIRES_DESCRIPTION', 400, 'A voice description is required');
-      }
-      if (mimoMode === 'clone' && !mimoSample.trim()) {
-        return apiError('MIMO_CLONE_REQUIRES_SAMPLE', 400, 'The reference audio sample is missing');
+      if (mimoMode !== 'clone' || !mimoSample.trim()) {
+        return apiError(
+          'MIMO_CLONE_REQUIRES_SAMPLE',
+          400,
+          'MiMo requires a cloned voice: pick one in Settings, or re-upload its reference audio',
+        );
       }
     }
 

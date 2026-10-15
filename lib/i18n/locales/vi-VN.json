@@ -1535,16 +1535,10 @@
     "cosyvoiceCloneRefAudioHint": "Tải lên hoặc ghi âm một đoạn MP3 giọng nói thật (khuyến nghị 10–30 giây). Mẫu sẽ được kiểm tra bằng nhận dạng giọng nói phía máy chủ; âm thuần hoặc im lặng sẽ bị từ chối. Không cần bản chép lời.",
     "cosyvoiceTestRequiresVoice": "Hãy thêm giọng nhân bản trước — dịch vụ này chỉ dùng được giọng do bạn nhân bản.",
     "mimoVoicesTitle": "Giọng MiMo",
-    "mimoVoicesHint": "Giọng dựng sẵn dùng được ngay; bạn cũng có thể thiết kế giọng bằng mô tả văn bản hoặc nhân bản từ mẫu âm thanh. Dữ liệu giọng chỉ nằm trên thiết bị này và gửi kèm mỗi yêu cầu — xóa là mất hẳn.",
-    "mimoTabDesign": "Thiết kế giọng",
+    "mimoVoicesHint": "Tải lên một đoạn âm thanh để nhân bản giọng nói — tài liệu chỉ lưu trên thiết bị này, đi kèm mỗi yêu cầu tổng hợp, và xóa hồ sơ sẽ xóa hoàn toàn.",
     "mimoTabClone": "Nhân bản giọng",
-    "mimoDesignPlaceholder": "Mô tả giọng bạn muốn, vd: phụ nữ ngoài 20, dịu trong, nói chậm, thư thái kiểu radio đêm",
-    "mimoDesignHint": "Càng cụ thể càng tốt: giới tính & tuổi, chất giọng, cảm xúc, nhịp (khuyên 1–4 câu)",
     "mimoStyleOptional": "Chỉ dẫn phong cách (tùy chọn, áp mỗi lần tổng hợp)",
-    "mimoDesignAdded": "Đã thêm giọng thiết kế",
     "mimoCloneAdded": "Đã thêm giọng nhân bản",
-    "mimoDesignBadge": "Thiết kế",
-    "mimoOptimizeText": "Để MiMo tự trau dồi văn bản tổng hợp",
     "cloneApiKeyRequired": "Hãy nhập khóa API của dịch vụ này ở trên trước.",
     "cosyvoiceTestSelectVoice": "Đã có giọng nhân bản — hãy chọn làm giọng hiện hành (nút ✓ trong kho giọng) trước khi thử.",
     "cloneUseAsActive": "Đặt làm giọng hiện hành",
@@ -2079,7 +2073,8 @@
       "getApiKey": "Lấy khóa API",
       "domestic": "Trung Quốc",
       "international": "Quốc tế"
-    }
+    },
+    "mimoDesignRetired": "Thiết kế (đã ngừng)"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

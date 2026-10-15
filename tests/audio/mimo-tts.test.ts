@@ -1,10 +1,12 @@
 /**
- * MiMo-V2.5-TTS synthesis client tests.
+ * MiMo-V2.5-TTS synthesis client tests — CLONE-ONLY build.
  *
  * Locks the live-probed wire contract (docs/mimo-tts-feasibility-analysis.md):
- * assistant-carries-text, user-carries-(description|style), voice= name/dataURI/
- * omitted, inline base64 response — plus the two undocumented behaviors:
- * 429 retry and the corrupt-sample 500 fallback wording.
+ * assistant-carries-text, user-carries-style, voice=data-URI sample, inline
+ * base64 response — plus the two undocumented behaviors: 429 retry and the
+ * corrupt-sample 500 fallback wording. The clone-only decision (2026-10-15)
+ * removed the preset catalog and the voicedesign model, so there is exactly
+ * one model and a missing sample is a named error, never a silent fallback.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,19 +26,20 @@ vi.mock('node:dns', async (importOriginal) => {
   };
 });
 
-import { generateMiMoTTS, resolveMiMoModelForRequest } from '@/lib/audio/mimo-tts';
-import {
-  MIMO_TTS_CATALOG_MODEL,
-  MIMO_TTS_VOICE_CLONE_MODEL,
-  MIMO_TTS_VOICE_DESIGN_MODEL,
-} from '@/lib/audio/mimo';
+import { generateMiMoTTS } from '@/lib/audio/mimo-tts';
+import { MIMO_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/mimo';
 
 const BASE = 'https://api.xiaomimimo.com/v1';
 const CONFIG = {
   providerId: 'mimo-tts' as const,
-  voice: '冰糖',
+  voice: 'mimo:profile:p1',
   apiKey: 'sk-test',
   baseUrl: BASE,
+};
+const CLONE_OPTIONS = {
+  voiceMode: 'clone' as const,
+  referenceAudioBase64: 'QUJD',
+  referenceAudioMimeType: 'audio/wav',
 };
 
 function wavB64(): string {
@@ -63,88 +66,34 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('MiMo TTS', () => {
-  it('routes the model by voiceMode (the client-derived shape)', () => {
-    expect(resolveMiMoModelForRequest('冰糖', { voiceMode: 'preset' })).toBe(
-      MIMO_TTS_CATALOG_MODEL,
-    );
-    expect(
-      resolveMiMoModelForRequest('mimo:profile:x', { voiceMode: 'design', voicePrompt: 'd' }),
-    ).toBe(MIMO_TTS_VOICE_DESIGN_MODEL);
-    expect(
-      resolveMiMoModelForRequest('mimo:profile:x', {
-        voiceMode: 'clone',
-        referenceAudioBase64: 'A',
-      }),
-    ).toBe(MIMO_TTS_VOICE_CLONE_MODEL);
-    // A stale persisted model never overrides the kind: design profiles do
-    // not speak through the catalog model even if some old setting says so.
-    expect(
-      resolveMiMoModelForRequest('mimo:profile:x', { voiceMode: 'design' }, MIMO_TTS_CATALOG_MODEL),
-    ).toBe(MIMO_TTS_VOICE_DESIGN_MODEL);
-  });
-
-  it('sends text in the assistant message with the preset voice', async () => {
+describe('MiMo TTS (clone-only)', () => {
+  it('always speaks through the voiceclone model, sample and all', async () => {
     fetchMock.mockResolvedValue(
       okResponse({ choices: [{ message: { audio: { data: wavB64() } } }] }),
     );
+    // Even a stale preset-looking voice id cannot pick another model — the
+    // provider has exactly one, and the sample is what makes it speak.
     const result = await generateMiMoTTS(
-      { ...CONFIG, providerOptions: { voiceMode: 'preset' } },
+      { ...CONFIG, voice: '冰糖', providerOptions: CLONE_OPTIONS },
       '你好',
       AbortSignal.timeout(10_000),
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body.model).toBe(MIMO_TTS_CATALOG_MODEL);
+    expect(body.model).toBe(MIMO_TTS_VOICE_CLONE_MODEL);
     expect(body.messages.at(-1)).toEqual({ role: 'assistant', content: '你好' });
-    expect(body.audio).toEqual({ format: 'wav', voice: '冰糖' });
+    expect(body.audio.voice).toBe('data:audio/wav;base64,QUJD');
     expect(result.format).toBe('wav');
   });
 
-  it('omits voice for unknown/stale preset ids (documented default wins)', async () => {
-    fetchMock.mockResolvedValue(
-      okResponse({ choices: [{ message: { audio: { data: wavB64() } } }] }),
-    );
-    await generateMiMoTTS(
-      { ...CONFIG, voice: 'gone-voice', providerOptions: { voiceMode: 'preset' } },
-      'hi',
-      AbortSignal.timeout(10_000),
-    );
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body.audio).toEqual({ format: 'wav' });
-  });
-
-  it('put the description in the user message for voicedesign', async () => {
+  it('assembles the clone data URI with the profile MIME and style instruction', async () => {
     fetchMock.mockResolvedValue(
       okResponse({ choices: [{ message: { audio: { data: wavB64() } } }] }),
     );
     await generateMiMoTTS(
       {
         ...CONFIG,
-        voice: 'mimo:profile:p1',
-        providerOptions: { voiceMode: 'design', voicePrompt: '温柔的深夜女声' },
-      },
-      '晚安',
-      AbortSignal.timeout(10_000),
-    );
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body.model).toBe(MIMO_TTS_VOICE_DESIGN_MODEL);
-    expect(body.messages[0]).toEqual({ role: 'user', content: '温柔的深夜女声' });
-    expect(body.messages[1]).toEqual({ role: 'assistant', content: '晚安' });
-    expect(body.audio).toEqual({ format: 'wav' });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('assembles the clone data URI with the profile MIME', async () => {
-    fetchMock.mockResolvedValue(
-      okResponse({ choices: [{ message: { audio: { data: wavB64() } } }] }),
-    );
-    await generateMiMoTTS(
-      {
-        ...CONFIG,
-        voice: 'mimo:profile:p2',
         providerOptions: {
-          voiceMode: 'clone',
-          referenceAudioBase64: 'QUJD',
+          ...CLONE_OPTIONS,
           referenceAudioMimeType: 'audio/mpeg',
           styleInstruction: '激动地说',
         },
@@ -153,26 +102,33 @@ describe('MiMo TTS', () => {
       AbortSignal.timeout(10_000),
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(body.model).toBe(MIMO_TTS_VOICE_CLONE_MODEL);
     expect(body.messages[0]).toEqual({ role: 'user', content: '激动地说' });
     expect(body.audio.voice).toBe('data:audio/mpeg;base64,QUJD');
   });
 
-  it('rejects design/clone requests missing their material', async () => {
-    await expect(
-      generateMiMoTTS(
-        { ...CONFIG, providerOptions: { voiceMode: 'design' } },
-        'x',
-        AbortSignal.timeout(10_000),
-      ),
-    ).rejects.toMatchObject({ code: 'MIMO_DESIGN_REQUIRES_DESCRIPTION' });
+  it('sends an empty user message when no style instruction is set', async () => {
+    fetchMock.mockResolvedValue(
+      okResponse({ choices: [{ message: { audio: { data: wavB64() } } }] }),
+    );
+    await generateMiMoTTS(
+      { ...CONFIG, providerOptions: CLONE_OPTIONS },
+      '晚安',
+      AbortSignal.timeout(10_000),
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.messages[0]).toEqual({ role: 'user', content: '' });
+  });
+
+  it('rejects a clone request whose sample did not accompany the options', async () => {
+    // No system voice exists to fall back to, so the missing sample is a named
+    // 400 before any network call.
     await expect(
       generateMiMoTTS(
         { ...CONFIG, providerOptions: { voiceMode: 'clone' } },
         'x',
         AbortSignal.timeout(10_000),
       ),
-    ).rejects.toMatchObject({ code: 'MIMO_CLONE_REQUIRES_SAMPLE' });
+    ).rejects.toMatchObject({ code: 'MIMO_CLONE_REQUIRES_SAMPLE', httpStatus: 400 });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -183,7 +139,7 @@ describe('MiMo TTS', () => {
       )
       .mockResolvedValueOnce(okResponse({ choices: [{ message: { audio: { data: wavB64() } } }] }));
     const pending = generateMiMoTTS(
-      { ...CONFIG, providerOptions: { voiceMode: 'preset' } },
+      { ...CONFIG, providerOptions: CLONE_OPTIONS },
       'hi',
       AbortSignal.timeout(10_000),
     );
@@ -198,7 +154,7 @@ describe('MiMo TTS', () => {
       new Response('{"error":{"code":"429","message":"Too many requests"}}', { status: 429 }),
     );
     const pending = generateMiMoTTS(
-      { ...CONFIG, providerOptions: { voiceMode: 'preset' } },
+      { ...CONFIG, providerOptions: CLONE_OPTIONS },
       'hi',
       AbortSignal.timeout(10_000),
     );
@@ -219,11 +175,7 @@ describe('MiMo TTS', () => {
       new Response('{"error":{"code":"500","message":"Internal Server Error"}}', { status: 500 }),
     );
     const error = await generateMiMoTTS(
-      {
-        ...CONFIG,
-        voice: 'mimo:profile:p3',
-        providerOptions: { voiceMode: 'clone', referenceAudioBase64: 'QUJD' },
-      },
+      { ...CONFIG, providerOptions: CLONE_OPTIONS },
       'hi',
       AbortSignal.timeout(10_000),
     ).catch((e) => e);
@@ -235,7 +187,7 @@ describe('MiMo TTS', () => {
     fetchMock.mockResolvedValue(okResponse({ choices: [{ message: {} }] }));
     await expect(
       generateMiMoTTS(
-        { ...CONFIG, providerOptions: { voiceMode: 'preset' } },
+        { ...CONFIG, providerOptions: CLONE_OPTIONS },
         'hi',
         AbortSignal.timeout(10_000),
       ),
@@ -251,7 +203,7 @@ describe('MiMo TTS', () => {
       }),
     );
     const result = await generateMiMoTTS(
-      { ...CONFIG, providerOptions: { voiceMode: 'preset' } },
+      { ...CONFIG, providerOptions: CLONE_OPTIONS },
       'hi',
       AbortSignal.timeout(10_000),
     );
@@ -266,7 +218,7 @@ describe('MiMo TTS', () => {
       okResponse({ choices: [{ message: { audio: { data: wavB64() } } }] }),
     );
     await generateMiMoTTS(
-      { ...CONFIG, baseUrl: `${BASE}/chat/completions`, providerOptions: { voiceMode: 'preset' } },
+      { ...CONFIG, baseUrl: `${BASE}/chat/completions`, providerOptions: CLONE_OPTIONS },
       'hi',
       AbortSignal.timeout(10_000),
     );

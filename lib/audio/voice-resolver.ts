@@ -21,12 +21,9 @@ import {
   voxCPMBackendSupportsReferenceAudio,
 } from '@/lib/audio/voxcpm';
 import {
-  MIMO_TTS_CATALOG_MODEL,
   MIMO_TTS_PROVIDER_ID,
   MIMO_TTS_VOICE_CLONE_MODEL,
-  MIMO_TTS_VOICE_DESIGN_MODEL,
   getMiMoProfileVoiceId,
-  isMiMoCatalogVoice,
   isMiMoProfileVoice,
 } from '@/lib/audio/mimo';
 
@@ -133,20 +130,13 @@ export function resolveAgentVoice(
       continue;
     }
     if (choice.providerId === MIMO_TTS_PROVIDER_ID) {
+      // Clone-only: a local profile is the only speakable voice. The synthesis
+      // path re-reads it from IndexedDB per request; the model id is
+      // informational here (the clone model is the only one left).
       if (isMiMoProfileVoice(choice.voiceId)) {
-        // Local design/clone profile: the synthesis path re-reads it from
-        // IndexedDB per request; the model id is informational here and kept
-        // in sync with the kind-based routing (voiceMode is authoritative).
         return {
           providerId: choice.providerId,
-          modelId: choice.modelId || MIMO_TTS_CATALOG_MODEL,
-          voiceId: choice.voiceId,
-        };
-      }
-      if (isMiMoCatalogVoice(choice.voiceId)) {
-        return {
-          providerId: choice.providerId,
-          modelId: choice.modelId || MIMO_TTS_CATALOG_MODEL,
+          modelId: choice.modelId || MIMO_TTS_VOICE_CLONE_MODEL,
           voiceId: choice.voiceId,
         };
       }
@@ -346,8 +336,13 @@ export function getEnabledProvidersWithVoices(
             language: 'auto',
           }))
         : providerId === MIMO_TTS_PROVIDER_ID
-          ? voiceProfiles
-              .filter((profile) => profile.providerId === MIMO_TTS_PROVIDER_ID)
+          ? // Clone-only: retired kind='prompt' (voice-design) profiles are not
+            // synthesizable and must not appear in any picker.
+            voiceProfiles
+              .filter(
+                (profile) =>
+                  profile.providerId === MIMO_TTS_PROVIDER_ID && profile.kind === 'clone',
+              )
               .map((profile) => ({
                 id: getMiMoProfileVoiceId(profile.id),
                 name: profile.name,
@@ -383,19 +378,9 @@ export function getEnabledProvidersWithVoices(
           if (providerId === VOXCPM_TTS_PROVIDER_ID) {
             compatibleVoices.push(...userVoices);
           } else if (providerId === MIMO_TTS_PROVIDER_ID) {
-            // Model follows profile kind: design profiles only speak through
-            // the voicedesign model, clone samples only through voiceclone; the
-            // catalog model takes only preset names (handled by the
-            // compatibleModels filter above).
-            compatibleVoices.push(
-              ...userVoices.filter((voice) =>
-                model.id === MIMO_TTS_VOICE_DESIGN_MODEL
-                  ? voice.kind === 'prompt'
-                  : model.id === MIMO_TTS_VOICE_CLONE_MODEL
-                    ? voice.kind === 'clone'
-                    : false,
-              ),
-            );
+            // Clone-only: every listed profile is a clone sample and speaks
+            // through the single voiceclone model (the only model left).
+            compatibleVoices.push(...userVoices);
           } else if (
             // Qwen's clone model takes only enrolled ids (its catalog voices
             // belong to the flash models); CosyVoice is the inverse — clone-

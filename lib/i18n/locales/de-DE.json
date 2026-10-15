@@ -1535,16 +1535,10 @@
     "cosyvoiceCloneRefAudioHint": "Laden Sie einen echten Sprach-MP3-Clip hoch oder nehmen Sie einen auf (10–30 s empfohlen). Die Probe wird serverseitig per Spracherkennung geprüft; reine Töne oder Stille werden abgelehnt. Kein Transkript nötig.",
     "cosyvoiceTestRequiresVoice": "Fügen Sie zuerst eine geklonte Stimme hinzu — dieser Dienst kann nur von Ihnen erstellte Stimmen sprechen.",
     "mimoVoicesTitle": "MiMo-Stimmen",
-    "mimoVoicesHint": "Preset-Stimmen sind sofort einsatzbereit; Sie können auch eine Stimme per Textbeschreibung entwerfen oder per Audiosample klonen. Das Material liegt nur auf diesem Gerät und wird bei jeder Anfrage mitgesendet — Löschen entfernt es vollständig.",
-    "mimoTabDesign": "Stimme entwerfen",
+    "mimoVoicesHint": "Laden Sie eine Audioaufnahme hoch, um eine Stimme zu klonen — das Material bleibt auf diesem Gerät, wird bei jeder Synthese mitgesendet und ist mit dem Löschen des Profils restlos entfernt.",
     "mimoTabClone": "Stimme klonen",
-    "mimoDesignPlaceholder": "Beschreiben Sie die gewünschte Stimme, z. B. Frau Mitte 20, sanft und klar, langsam, mit spätabendlicher Ruhe",
-    "mimoDesignHint": "Konkreter ist besser: Geschlecht & Alter, Klangtextur, Stimmung, Tempo (1–4 Sätze empfohlen)",
     "mimoStyleOptional": "Stilanweisung (optional, gilt je Synthese)",
-    "mimoDesignAdded": "Entwurfsstimme hinzugefügt",
     "mimoCloneAdded": "Klone-Stimme hinzugefügt",
-    "mimoDesignBadge": "Entwurf",
-    "mimoOptimizeText": "MiMo den Zieltext automatisch aufbereiten lassen",
     "cloneApiKeyRequired": "Tragen Sie zuerst oben den API-Schlüssel dieses Dienstes ein.",
     "cosyvoiceTestSelectVoice": "Geklonte Stimmen vorhanden — wählen Sie zuerst im Stimmpool per ✓ die aktive Stimme.",
     "cloneUseAsActive": "Als aktive Stimme verwenden",
@@ -2079,7 +2073,8 @@
       "getApiKey": "API-Key holen",
       "domestic": "Festland",
       "international": "International"
-    }
+    },
+    "mimoDesignRetired": "Design (eingestellt)"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

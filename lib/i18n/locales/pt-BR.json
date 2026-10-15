@@ -1535,16 +1535,10 @@
     "cosyvoiceCloneRefAudioHint": "Envie ou grave um clipe MP3 de fala real (10–30 s recomendado). A amostra é verificada por reconhecimento de fala no servidor; tons puros ou silêncio são rejeitados. Não é necessária transcrição.",
     "cosyvoiceTestRequiresVoice": "Adicione primeiro uma voz clonada — este serviço só fala vozes que você clonar.",
     "mimoVoicesTitle": "Vozes MiMo",
-    "mimoVoicesHint": "Vozes predefinidas funcionam de imediato; você também pode criar uma voz por descrição de texto ou clonar uma a partir de uma amostra de áudio. O material fica apenas neste dispositivo e é enviado a cada requisição — excluir remove por completo.",
-    "mimoTabDesign": "Criar uma voz",
+    "mimoVoicesHint": "Envie uma amostra de áudio para clonar uma voz — o material fica neste dispositivo, acompanha cada síntese e excluir o perfil o remove por completo.",
     "mimoTabClone": "Clonar uma voz",
-    "mimoDesignPlaceholder": "Descreva a voz desejada, ex.: mulher na faixa dos 20, suave e clara, fala pausada, com calma de rádio noturno",
-    "mimoDesignHint": "Quanto mais concreto, melhor: gênero e idade, textura, humor, ritmo (1–4 frases recomendadas)",
     "mimoStyleOptional": "Instrução de estilo (opcional, aplica a cada síntese)",
-    "mimoDesignAdded": "Voz criada adicionada",
     "mimoCloneAdded": "Voz clonada adicionada",
-    "mimoDesignBadge": "Criação",
-    "mimoOptimizeText": "Deixar o MiMo polir o texto-alvo automaticamente",
     "cloneApiKeyRequired": "Informe primeiro a chave de API deste serviço acima.",
     "cosyvoiceTestSelectVoice": "Há vozes clonadas — escolha uma como voz ativa (botão ✓ no pool) antes de testar.",
     "cloneUseAsActive": "Usar como voz ativa",
@@ -2079,7 +2073,8 @@
       "getApiKey": "Obter chave de API",
       "domestic": "China continental",
       "international": "Internacional"
-    }
+    },
+    "mimoDesignRetired": "Design (desativado)"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

@@ -1535,16 +1535,10 @@
     "cosyvoiceCloneRefAudioHint": "실제 음성 MP3(10~30초 권장)를 업로드하거나 녹음하세요. 서버에서 음성 인식 검증을 하므로 순수 톤이나 무음은 거부됩니다. 전사 텍스트는 필요하지 않습니다.",
     "cosyvoiceTestRequiresVoice": "먼저 클론 음성을 추가하세요. 이 서비스는 복제한 음성만 사용할 수 있습니다.",
     "mimoVoicesTitle": "MiMo 음성 관리",
-    "mimoVoicesHint": "프리셋 음성은 바로 사용 가능합니다. 텍스트 설명으로 음성을 디자인하거나 음성 샘플로 복제할 수도 있습니다. 음성 자료는 이 기기에만 저장되며 매 요청마다 함께 전송됩니다. 삭제하면 완전히 제거됩니다.",
-    "mimoTabDesign": "음성 디자인",
+    "mimoVoicesHint": "오디오 샘플을 업로드하면 음성을 클론할 수 있습니다 — 샘플은 이 기기에만 저장되고, 합성마다 요청과 함께 전송되며, 삭제하면 완전히 지워집니다.",
     "mimoTabClone": "음성 클론",
-    "mimoDesignPlaceholder": "원하는 음성을 설명하세요. 예: 20대 여성, 부드럽고 맑은 목소리, 느린 템포, 심야 라디오의 여유로움",
-    "mimoDesignHint": "구체적일수록 좋습니다: 성별·나이, 음색, 감정, 속도(1~4문장 권장)",
     "mimoStyleOptional": "스타일 지시(선택, 매 합성마다 적용)",
-    "mimoDesignAdded": "디자인 음성을 추가했습니다",
     "mimoCloneAdded": "클론 음성을 추가했습니다",
-    "mimoDesignBadge": "디자인",
-    "mimoOptimizeText": "MiMo가 합성 텍스트를 자동 다듬게 하기",
     "cloneApiKeyRequired": "먼저 위에서 이 서비스의 API 키를 입력한 후 음성을 클론하세요.",
     "cosyvoiceTestSelectVoice": "클론 음성이 있습니다. 테스트 전에 음성 풀에서 ✓를 눌러 현재 음성을 선택하세요.",
     "cloneUseAsActive": "현재 음성으로 설정",
@@ -2079,7 +2073,8 @@
       "getApiKey": "API 키 받기",
       "domestic": "중국 본토",
       "international": "해외"
-    }
+    },
+    "mimoDesignRetired": "설계(지원 종료)"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

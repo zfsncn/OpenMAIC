@@ -1520,16 +1520,10 @@
     "cosyvoiceCloneRefAudioHint": "上傳或錄製一段真人語音 MP3（建議 10–30 秒）。樣本會在伺服器端做語音辨識校驗，純音或靜音會被拒絕。無需文字稿。",
     "cosyvoiceTestRequiresVoice": "請先新增複製音色 —— 該服務只能使用你複製的音色。",
     "mimoVoicesTitle": "MiMo 音色管理",
-    "mimoVoicesHint": "預置音色開箱即用；也可用文字描述設計音色，或上傳音訊樣本複製 —— 素材只存於本裝置、每次合成隨請求攜帶，刪除即徹底刪除。",
-    "mimoTabDesign": "設計音色",
+    "mimoVoicesHint": "上傳一段音訊樣本即可複製音色 —— 素材只保存在本機、每次合成隨請求攜帶，刪除即徹底刪除。",
     "mimoTabClone": "複製音色",
-    "mimoDesignPlaceholder": "描述想要的音色，例如：二十多歲的年輕女性，聲音溫柔清澈，語速偏慢，帶有深夜電台主播的鬆弛感",
-    "mimoDesignHint": "描述越具體越好：性別年齡、音色質感、情緒語氣、語速節奏（建議 1–4 句）",
     "mimoStyleOptional": "風格指令（選填，合成時隨語音一起生效）",
-    "mimoDesignAdded": "設計音色已新增",
     "mimoCloneAdded": "複製音色已新增",
-    "mimoDesignBadge": "設計",
-    "mimoOptimizeText": "讓 MiMo 自動潤飾合成文字",
     "cloneApiKeyRequired": "請先在上方填寫該服務的 API 金鑰，再新增複製音色。",
     "cosyvoiceTestSelectVoice": "已有複製音色 —— 請先在音色池點「✓」將其設為目前音色，再測試。",
     "cloneUseAsActive": "設為目前音色",
@@ -2064,7 +2058,8 @@
       "getApiKey": "取得 API Key",
       "domestic": "國內",
       "international": "海外"
-    }
+    },
+    "mimoDesignRetired": "設計（已停用）"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

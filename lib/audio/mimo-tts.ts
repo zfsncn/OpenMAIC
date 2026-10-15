@@ -1,15 +1,16 @@
 /**
- * MiMo-V2.5-TTS synthesis client (server side).
+ * MiMo-V2.5-TTS synthesis client (server side) — CLONE-ONLY.
  *
- * One endpoint for all three models: OpenAI-compatible
- * `POST {base}/chat/completions`. Wire contract (docs + live probes
- * 2026-10-12, see docs/mimo-tts-feasibility-analysis.md):
+ * One endpoint, one model: OpenAI-compatible
+ * `POST {base}/chat/completions` with `mimo-v2.5-tts-voiceclone`. Wire
+ * contract (docs + live probes 2026-10-12, see
+ * docs/mimo-tts-feasibility-analysis.md):
  *
  *   - synthesis text goes in the `assistant` message (400 without it);
- *   - `user` message carries the style instruction — and for voicedesign it IS
- *     the voice description (required); for voiceclone an empty string is the
- *     documented norm;
- *   - `audio.voice`: preset name | `data:{mime};base64,…` sample | omitted;
+ *   - `user` message carries the optional style instruction (empty string is
+ *     the documented norm);
+ *   - `audio.voice` = `data:{mime};base64,{sample}` — the reference audio,
+ *     inline per request (mp3/wav both accepted);
  *   - response audio is INLINE base64 at `choices[0].message.audio.data`
  *     (wav/pcm16/mp3 by `audio.format`) — no URL, no second download;
  *   - live measured quirks the docs do not state:
@@ -18,6 +19,11 @@
  *         client-side, and word the error so users change the file);
  *       long text can take ~60s — the route budget is 30s, so requests get a
  *         slightly shorter deadline and a clear timeout message.
+ *
+ * The preset catalog and the voicedesign model were removed 2026-10-15
+ * ("clone-only" decision): there is no system voice to fall back to, so a
+ * request whose sample did not accompany the options is a named 400
+ * (MIMO_CLONE_REQUIRES_SAMPLE) — never a silent switch to another voice.
  */
 
 // Type-only import: tts-providers value-imports generateMiMoTTS, so this side
@@ -26,13 +32,7 @@
 // shared TTSRateLimitError for the same reason.
 import type { TTSGenerationResult } from '@/lib/audio/tts-providers';
 import type { TTSModelConfig } from '@/lib/audio/types';
-import {
-  MIMO_TTS_CATALOG_MODEL,
-  MIMO_TTS_VOICE_CLONE_MODEL,
-  MIMO_TTS_VOICE_DESIGN_MODEL,
-  isMiMoCatalogVoice,
-  type MimoProviderOptions,
-} from '@/lib/audio/mimo';
+import { MIMO_TTS_VOICE_CLONE_MODEL, type MimoProviderOptions } from '@/lib/audio/mimo';
 import { audioEndpointPolicy, audioProviderFetch } from '@/lib/server/audio-provider-fetch';
 
 const CHAT_COMPLETIONS_PATH = '/chat/completions';
@@ -45,7 +45,6 @@ const RATE_LIMIT_RETRY_ATTEMPTS = 2;
 export type MiMoErrorCode =
   | 'MIMO_CONFIG_MISSING'
   | 'MIMO_ENDPOINT_INVALID'
-  | 'MIMO_DESIGN_REQUIRES_DESCRIPTION'
   | 'MIMO_CLONE_REQUIRES_SAMPLE'
   | 'MIMO_HTTP_ERROR'
   | 'MIMO_TIMEOUT'
@@ -64,33 +63,6 @@ export class MiMoTTSError extends Error {
     super(`${code}${vendorMessage ? `: ${vendorMessage}` : ''}`);
     this.name = 'MiMoTTSError';
   }
-}
-
-/**
- * Model follows the voice's SHAPE — the client's `voiceMode` (derived from the
- * profile kind at option-build time, the last point where the profile is
- * known) is the single authority. A persisted `configuredModelId` is only a
- * tie-breaker for the preset branch (it can pin nothing else), because stale
- * model ids against design/clone profiles would otherwise send a clone sample
- * to the voicedesign model or vice versa.
- */
-export function resolveMiMoModelForRequest(
-  voice: string,
-  options: MimoProviderOptions,
-  configuredModelId?: string,
-): string {
-  if (options.voiceMode === 'design') return MIMO_TTS_VOICE_DESIGN_MODEL;
-  if (options.voiceMode === 'clone') return MIMO_TTS_VOICE_CLONE_MODEL;
-  // Preset branch: honor a persisted catalog model id only if it is one;
-  // unknown/stale ids fall back to the catalog default.
-  if (
-    configuredModelId === MIMO_TTS_CATALOG_MODEL ||
-    configuredModelId === MIMO_TTS_VOICE_DESIGN_MODEL ||
-    configuredModelId === MIMO_TTS_VOICE_CLONE_MODEL
-  ) {
-    if (isMiMoCatalogVoice(voice)) return configuredModelId;
-  }
-  return MIMO_TTS_CATALOG_MODEL;
 }
 
 interface MiMoFetchTarget {
@@ -125,54 +97,28 @@ function resolveTarget(config: TTSModelConfig): MiMoFetchTarget {
   };
 }
 
-function buildPayload(
-  text: string,
-  voice: string,
-  model: string,
-  options: MimoProviderOptions,
-): Record<string, unknown> {
-  const messages: Array<{ role: string; content: string }> = [];
-  if (model === MIMO_TTS_VOICE_DESIGN_MODEL) {
-    const description = options.voicePrompt?.trim();
-    if (!description) {
-      throw new MiMoTTSError(
-        'MIMO_DESIGN_REQUIRES_DESCRIPTION',
-        400,
-        undefined,
-        'a voice description is required for the voicedesign model',
-      );
-    }
-    messages.push({ role: 'user', content: description });
-  } else if (model === MIMO_TTS_VOICE_CLONE_MODEL) {
-    const sample = options.referenceAudioBase64?.trim();
-    if (!sample) {
-      throw new MiMoTTSError(
-        'MIMO_CLONE_REQUIRES_SAMPLE',
-        400,
-        undefined,
-        'the reference audio sample did not accompany the clone request',
-      );
-    }
-    messages.push({ role: 'user', content: options.styleInstruction?.trim() || '' });
-  } else {
-    const style = options.styleInstruction?.trim() || options.voicePrompt?.trim() || '';
-    if (style) messages.push({ role: 'user', content: style });
+function buildPayload(text: string, options: MimoProviderOptions): Record<string, unknown> {
+  // Clone-only: the sample is mandatory. The API route pre-checks the same
+  // condition; this is the second layer for direct adapter calls.
+  const sample = options.referenceAudioBase64?.trim();
+  if (!sample) {
+    throw new MiMoTTSError(
+      'MIMO_CLONE_REQUIRES_SAMPLE',
+      400,
+      undefined,
+      'the reference audio sample did not accompany the clone request',
+    );
   }
-  messages.push({ role: 'assistant', content: text });
-
-  const audio: Record<string, unknown> = { format: 'wav' };
-  if (model === MIMO_TTS_VOICE_CLONE_MODEL) {
-    const mime = options.referenceAudioMimeType?.trim() || 'audio/wav';
-    audio.voice = `data:${mime};base64,${options.referenceAudioBase64}`;
-  } else if (model === MIMO_TTS_VOICE_DESIGN_MODEL) {
-    if (options.optimizeTextPreview) audio.optimize_text_preview = true;
-  } else if (voice && isMiMoCatalogVoice(voice)) {
-    audio.voice = voice;
-  }
-  // Unknown (stale) preset names fall through: MiMo's documented default voice
-  // (mimo_default) speaks instead of failing the whole request.
-
-  return { model, messages, audio, stream: false };
+  const messages: Array<{ role: string; content: string }> = [
+    { role: 'user', content: options.styleInstruction?.trim() || '' },
+    { role: 'assistant', content: text },
+  ];
+  const mime = options.referenceAudioMimeType?.trim() || 'audio/wav';
+  const audio: Record<string, unknown> = {
+    format: 'wav',
+    voice: `data:${mime};base64,${sample}`,
+  };
+  return { model: MIMO_TTS_VOICE_CLONE_MODEL, messages, audio, stream: false };
 }
 
 function decodeInlineAudio(data: unknown): Uint8Array | undefined {
@@ -196,8 +142,7 @@ export async function generateMiMoTTS(
 ): Promise<TTSGenerationResult> {
   const target = resolveTarget(config);
   const options = (config.providerOptions || {}) as MimoProviderOptions;
-  const model = resolveMiMoModelForRequest(config.voice, options, config.modelId);
-  const payload = buildPayload(text, config.voice, model, options);
+  const payload = buildPayload(text, options);
   const body = JSON.stringify(payload);
 
   const controller = new AbortController();
@@ -255,7 +200,7 @@ export async function generateMiMoTTS(
       } catch {
         /* keep raw */
       }
-      if (response.status === 500 && model === MIMO_TTS_VOICE_CLONE_MODEL) {
+      if (response.status === 500) {
         // MiMo answers a corrupt/undecodable sample with a bare 500 — say what
         // the user can act on.
         vendorMessage = `${vendorMessage} (the reference audio could not be decoded — use a normal playable mp3/wav clip)`;

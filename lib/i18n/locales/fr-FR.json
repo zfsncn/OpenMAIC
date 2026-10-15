@@ -1535,16 +1535,10 @@
     "cosyvoiceCloneRefAudioHint": "Importez ou enregistrez un extrait MP3 de vraie parole (10 à 30 s recommandé). L'échantillon est vérifié par reconnaissance vocale côté serveur ; les tons purs ou le silence sont refusés. Aucune transcription requise.",
     "cosyvoiceTestRequiresVoice": "Ajoutez d'abord une voix clonée — ce service ne peut lire que les voix que vous clonez.",
     "mimoVoicesTitle": "Voix MiMo",
-    "mimoVoicesHint": "Les voix prédéfinies fonctionnent immédiatement ; vous pouvez aussi concevoir une voix par description texte ou en cloner une depuis un échantillon audio. Le matériel reste sur cet appareil et est envoyé à chaque requête — supprimer l'enlève complètement.",
-    "mimoTabDesign": "Concevoir une voix",
+    "mimoVoicesHint": "Téléversez un extrait audio pour cloner une voix — le matériel reste sur cet appareil, voyage avec chaque synthèse, et sa suppression est définitive.",
     "mimoTabClone": "Cloner une voix",
-    "mimoDesignPlaceholder": "Décrivez la voix voulue, p. ex. femme dans la vingtaine, douce et claire, débit lent, calme de radio de nuit",
-    "mimoDesignHint": "Plus c'est concret, mieux c'est : sexe et âge, texture, humeur, débit (1 à 4 phrases conseillées)",
     "mimoStyleOptional": "Consigne de style (facultative, appliquée à chaque synthèse)",
-    "mimoDesignAdded": "Voix conçue ajoutée",
     "mimoCloneAdded": "Voix clonée ajoutée",
-    "mimoDesignBadge": "Conception",
-    "mimoOptimizeText": "Laisser MiMo repolir le texte cible automatiquement",
     "cloneApiKeyRequired": "Saisissez d'abord la clé API de ce service ci-dessus.",
     "cosyvoiceTestSelectVoice": "Des voix clonées existent — sélectionnez-en une comme voix active (bouton ✓) avant de tester.",
     "cloneUseAsActive": "Utiliser comme voix active",
@@ -2079,7 +2073,8 @@
       "getApiKey": "Obtenir une clé API",
       "domestic": "Chine",
       "international": "International"
-    }
+    },
+    "mimoDesignRetired": "Conception (retiré)"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

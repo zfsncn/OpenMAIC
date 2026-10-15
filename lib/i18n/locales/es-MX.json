@@ -1535,16 +1535,10 @@
     "cosyvoiceCloneRefAudioHint": "Sube o graba un clip MP3 de voz real (se recomiendan 10–30 s). La muestra se verifica con reconocimiento de voz en el servidor; los tonos puros o el silencio se rechazan. No se requiere transcripción.",
     "cosyvoiceTestRequiresVoice": "Agregue primero una voz clonada: este servicio solo puede usar las voces que usted clone.",
     "mimoVoicesTitle": "Voces MiMo",
-    "mimoVoicesHint": "Las voces preestablecidas funcionan de inmediato; también puede diseñar una voz con una descripción de texto o clonar una desde una muestra de audio. El material vive solo en este dispositivo y se envía con cada solicitud — eliminar lo quita por completo.",
-    "mimoTabDesign": "Diseñar una voz",
+    "mimoVoicesHint": "Sube una muestra de audio para clonar una voz — el material se queda en este dispositivo, viaja con cada síntesis y borrarlo lo elimina por completo.",
     "mimoTabClone": "Clonar una voz",
-    "mimoDesignPlaceholder": "Describa la voz deseada, p. ej. mujer de veinte y tantos, suave y clara, habla pausada, con calma de radio nocturna",
-    "mimoDesignHint": "Cuanto más concreto, mejor: género y edad, textura, ánimo, ritmo (1–4 frases sugeridas)",
     "mimoStyleOptional": "Instrucción de estilo (opcional, aplica a cada síntesis)",
-    "mimoDesignAdded": "Voz diseñada agregada",
     "mimoCloneAdded": "Voz clonada agregada",
-    "mimoDesignBadge": "Diseño",
-    "mimoOptimizeText": "Dejar que MiMo pula automáticamente el texto objetivo",
     "cloneApiKeyRequired": "Introduzca primero la clave API de este servicio arriba.",
     "cosyvoiceTestSelectVoice": "Hay voces clonadas: seleccione una como voz activa (botón ✓ en el pool) antes de probar.",
     "cloneUseAsActive": "Usar como voz activa",
@@ -2079,7 +2073,8 @@
       "getApiKey": "Obtener clave de API",
       "domestic": "China continental",
       "international": "Internacional"
-    }
+    },
+    "mimoDesignRetired": "Diseño (retirado)"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

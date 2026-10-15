@@ -43,12 +43,7 @@ import {
   VOXCPM_TTS_PROVIDER_ID,
   VOXCPM_VLLM_MODEL_ID,
 } from './voxcpm';
-import {
-  MIMO_PRESET_VOICES,
-  MIMO_TTS_CATALOG_MODEL,
-  MIMO_TTS_MODELS,
-  MIMO_TTS_PROVIDER_ID,
-} from './mimo';
+import { MIMO_TTS_MODELS, MIMO_TTS_PROVIDER_ID, MIMO_TTS_VOICE_CLONE_MODEL } from './mimo';
 
 /**
  * Default supported languages for custom OpenAI-compatible ASR providers.
@@ -103,12 +98,17 @@ export const COSYVOICE_TTS_VOICE_CLONE_MODEL = 'cosyvoice-v3.5-plus';
 export const COSYVOICE_NO_SYSTEM_VOICE = '__cosyvoice_requires_enrollment__';
 
 /**
- * MiMo-V2.5-TTS: stateless like VoxCPM — every request carries its voice
- * material (preset name / description / base64 sample), so there is no
+ * MiMo-V2.5-TTS: CLONE-ONLY since 2026-10-15. Stateless like VoxCPM — every
+ * request carries its voice material inline as a base64 sample, so there is no
  * enrollment flow, no cloud voice ids, and nothing to validate against a
- * static registry beyond the preset catalog plus local profile ids.
+ * static registry beyond local profile ids. The preset catalog and the
+ * voicedesign model were removed; `requiresRegisteredVoice` below plus an
+ * empty catalog mirror the CosyVoice clone-only shape.
  * Metadata and helpers live in `@/lib/audio/mimo` (client-safe).
  */
+
+/** Sentinel voice id: this provider has no voice that is not cloned locally. */
+export const MIMO_NO_SYSTEM_VOICE = '__mimo_requires_clone__';
 
 /**
  * CosyVoice enrollment ids look like `cosyvoice-v3.5-plus-<prefix>-<hash>`, so a
@@ -124,13 +124,16 @@ export function isCosyVoiceCloneVoice(voiceId?: string): boolean {
  * Whether the provider/voice pair ignores the requested speaking rate.
  *
  * Both clone paths are rate-less: Qwen's VC model has no rate parameter, and
- * CosyVoice's `SpeechSynthesizer` call takes none either. UI surfaces use this
- * to disable the speed control instead of offering a slider that does nothing.
+ * CosyVoice's `SpeechSynthesizer` call takes none either. MiMo is rate-less
+ * for every voice — its chat-completions payload carries no speed field at
+ * all. UI surfaces use this to disable the speed control instead of offering
+ * a slider that does nothing.
  */
 export function ignoresTTSRate(providerId: string, voiceId?: string): boolean {
   return (
     (providerId === 'qwen-tts' && isQwenCloneVoice(voiceId)) ||
-    (providerId === 'cosyvoice-tts' && isCosyVoiceCloneVoice(voiceId))
+    (providerId === 'cosyvoice-tts' && isCosyVoiceCloneVoice(voiceId)) ||
+    providerId === 'mimo-tts'
   );
 }
 
@@ -164,6 +167,9 @@ export function resolveTTSModelForVoice(
   // target model, so any voice must resolve to the clone model — there is no
   // catalog voice that would justify a different one.
   if (providerId === 'cosyvoice-tts') return COSYVOICE_TTS_VOICE_CLONE_MODEL;
+  // MiMo is clone-only too (2026-10-15): a single model speaks every local
+  // clone profile, so any voice resolves to it.
+  if (providerId === 'mimo-tts') return MIMO_TTS_VOICE_CLONE_MODEL;
   if (providerId !== 'qwen-tts') return requestedModelId;
   if (isQwenCloneVoice(voiceId)) return QWEN_TTS_VOICE_CLONE_MODEL;
   return requestedModelId && !isQwenVoiceCloneModel(requestedModelId)
@@ -786,13 +792,15 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
     icon: '/logos/xiaomi.svg',
-    // Three models chosen by the shape of the selected voice (preset / design /
-    // clone) — see resolveMiMoModelForRequest. The catalog model is the
-    // default because it is the only one with true streaming and the only one
-    // usable with zero local setup.
+    // Clone-only since 2026-10-15: every speakable voice is a local clone
+    // profile (IndexedDB), so registered voices must stay bindable even
+    // without a preset catalog — same contract as cosyvoice-tts.
+    requiresRegisteredVoice: true,
     models: MIMO_TTS_MODELS.map((m) => ({ id: m.id, name: m.name })),
-    defaultModelId: MIMO_TTS_CATALOG_MODEL,
-    voices: MIMO_PRESET_VOICES,
+    defaultModelId: MIMO_TTS_VOICE_CLONE_MODEL,
+    // Empty by design — the clone-only build ships no system voices. A
+    // non-empty list here would let the UI offer voices the API rejects.
+    voices: [],
     supportedFormats: ['mp3', 'wav'],
   },
 
@@ -1428,7 +1436,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
   'cosyvoice-tts': COSYVOICE_NO_SYSTEM_VOICE,
-  'mimo-tts': '冰糖',
+  'mimo-tts': MIMO_NO_SYSTEM_VOICE,
   'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
@@ -1443,7 +1451,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'glm-tts': 'glm-tts',
   'qwen-tts': 'qwen3-tts-flash',
   'cosyvoice-tts': COSYVOICE_TTS_VOICE_CLONE_MODEL,
-  'mimo-tts': MIMO_TTS_CATALOG_MODEL,
+  'mimo-tts': MIMO_TTS_VOICE_CLONE_MODEL,
   'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
