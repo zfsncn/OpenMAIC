@@ -491,6 +491,15 @@ export function CourseModelConfigPanel({}) {
     const id = config?.modelId || ttsBuiltIn(ttsProviderId)?.defaultModelId || '';
     return ttsModels.find((m) => m.id === id)?.name ?? id;
   }, [ttsProvidersConfig, ttsProviderId, ttsModels]);
+  // Providers without a model concept (e.g. doubao-tts, whose voices are the
+  // unit of selection) resolve to an empty model name. Fall back to the
+  // provider's display name so the card still tells the user what is wired up
+  // instead of rendering a bare "loop" label with no text.
+  const ttsProviderLabel = useMemo(() => {
+    const builtIn = ttsBuiltIn(ttsProviderId);
+    if (builtIn?.name) return builtIn.name;
+    return ttsProvidersConfig[ttsProviderId]?.customName || ttsProviderId;
+  }, [ttsProviderId, ttsProvidersConfig]);
 
   const asrModelName = useMemo(() => {
     const config = asrProvidersConfig[asrProviderId];
@@ -549,7 +558,7 @@ export function CourseModelConfigPanel({}) {
       case 'tts':
         return {
           following: true,
-          mediaLines: ttsEnabled ? [ttsModelName] : [],
+          mediaLines: ttsEnabled ? [ttsModelName || ttsProviderLabel] : [],
           allOff: !ttsEnabled,
         };
       case 'media': {
