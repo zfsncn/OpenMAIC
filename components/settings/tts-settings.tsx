@@ -73,6 +73,7 @@ import {
 import { getMiMoProfileVoiceId } from '@/lib/audio/mimo';
 import {
   VOXCPM_BACKENDS,
+  VOXCPM_AUTO_VOICE_ID,
   VOXCPM_TTS_PROVIDER_ID,
   buildVoxCPMBackendUrl,
   getVoxCPMBackendEndpoint,
@@ -801,6 +802,8 @@ function VoxCPMVoiceManager() {
   const { profiles, addPromptVoice, addCloneVoice, deleteVoice } = useVoxCPMVoiceProfiles();
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
+  const ttsVoice = useSettingsStore((state) => state.ttsVoice);
+  const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
   const { previewing, startPreview, stopPreview } = useTTSPreview();
   const voxcpmBackend = normalizeVoxCPMBackend(
     ttsProvidersConfig[VOXCPM_TTS_PROVIDER_ID]?.providerOptions?.backend,
@@ -1075,6 +1078,8 @@ function VoxCPMVoiceManager() {
                 badgeTone="default"
                 detail={t('settings.voxcpmAutoVoiceDescription')}
                 kind="auto"
+                selected={ttsVoice === VOXCPM_AUTO_VOICE_ID}
+                onSelect={() => setTTSVoice(VOXCPM_AUTO_VOICE_ID)}
               />
               {profiles.length > 0 ? (
                 profiles.map((profile) => {
@@ -1112,6 +1117,8 @@ function VoxCPMVoiceManager() {
                       muted={profile.kind === 'clone' && !supportsReferenceAudio}
                       previewing={canPreview && previewingVoiceId === voiceId}
                       onPreview={canPreview ? () => handlePreviewVoice(voiceId) : undefined}
+                      onSelect={() => setTTSVoice(voiceId)}
+                      selected={ttsVoice === voiceId}
                       onDelete={async () => {
                         await deleteVoice(profile.id);
                       }}

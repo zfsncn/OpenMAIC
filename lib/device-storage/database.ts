@@ -96,6 +96,8 @@ export interface VoiceProfileRecord {
   referenceAudio?: Blob;
   referenceAudioName?: string;
   referenceAudioMimeType?: string;
+  /** Backend-issued id when this clone was registered server-side (stable timbre by id). */
+  registeredVoiceId?: string;
   createdAt: number;
   updatedAt: number;
 }

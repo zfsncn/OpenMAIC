@@ -277,20 +277,38 @@ export function useVoxCPMVoiceProfiles() {
   );
 
   const addCloneVoice = useCallback(
-    async (input: {
-      name: string;
-      referenceAudio: Blob;
-      referenceAudioName?: string;
-      referenceAudioMimeType?: string;
-      promptText?: string;
-      voicePrompt?: string;
-    }) => {
+    async (
+      input: {
+        name: string;
+        referenceAudio: Blob;
+        referenceAudioName?: string;
+        referenceAudioMimeType?: string;
+        promptText?: string;
+        voicePrompt?: string;
+      },
+      request?: VoiceRegistrationRequestConfig,
+    ) => {
       const now = Date.now();
       const id = createId();
       const referenceAudio = await normalizeVoxCPMReferenceAudio(
         input.referenceAudio,
         input.referenceAudioName,
       );
+      // Register the reference clip on the VoxCPM backend so server-side
+      // generation (scene-tts / classroom TTS) can reference the clone by id —
+      // the browser cannot ship IndexedDB bytes to the server. This mirrors the
+      // Qwen/CosyVoice clone flow. On failure we keep the local profile (the
+      // clone still works for client-driven preview) and surface a warning.
+      let registeredVoiceId: string | undefined;
+      try {
+        registeredVoiceId = await registerVoiceFromReference(
+          VOXCPM_TTS_PROVIDER_ID,
+          { name: id, referenceAudio: referenceAudio.blob, refText: input.promptText?.trim() || '' },
+          request || {},
+        );
+      } catch (error) {
+        console.warn('[VoxCPM] failed to register clone voice on backend:', error);
+      }
       await db.voiceProfiles.put({
         id,
         providerId: VOXCPM_TTS_PROVIDER_ID,
@@ -301,6 +319,7 @@ export function useVoxCPMVoiceProfiles() {
         referenceAudio: referenceAudio.blob,
         referenceAudioName: referenceAudio.name,
         referenceAudioMimeType: referenceAudio.mimeType,
+        registeredVoiceId,
         createdAt: now,
         updatedAt: now,
       });
@@ -551,6 +570,17 @@ export async function getVoxCPMProviderOptions(
   }
 
   if (profile.kind === 'clone' && profile.referenceAudio) {
+    // Prefer the backend-registered id when available: server-side generation
+    // (scene-tts) can reference the clone by id, and the request stays lean.
+    // Falls back to inline base64 only when not registered (legacy clones).
+    if (profile.registeredVoiceId) {
+      return {
+        voiceMode: 'clone',
+        voicePrompt: profile.voicePrompt,
+        promptText: profile.promptText,
+        registeredVoiceId: profile.registeredVoiceId,
+      };
+    }
     return {
       voiceMode: 'clone',
       voicePrompt: profile.voicePrompt,
