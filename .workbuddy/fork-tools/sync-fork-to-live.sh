@@ -31,7 +31,15 @@ root, out = sys.argv[1], sys.argv[2]
 SKIP = {'node_modules','.next','.git','.codegraph','data','test-results',
         'playwright-report','blob-report','coverage','.workbuddy','dist'}
 XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt','tts_proxy.py',
-         'server-providers.yml','start-3002-after-reboot.cmd'}
+         'server-providers.yml','start-3002-after-reboot.cmd',
+         'build_doubao_clone.log','build_doubao_onselect.log',
+         'proxy_err.log','proxy_out.log',
+         'start_all.bat','start_tts_proxy.bat'}
+# ⚠️ 上述 6 项（2026-11-02 新增）都是**现场独有的开发噪音**，不属于源码：
+#    *.log = 历次本地构建/代理的日志；start_all.bat / start_tts_proxy.bat =
+#    本机 Windows 启动脚本（机器特定，含本地路径与端口）。它们既不能进 fork
+#    仓库，也不该进镜像构建上下文。在快照层忽略，避免每轮漂移校验被
+#    「仅现场=7」反复阻断（2026-11-02 实测）。文件本身保留在现场未删除。
 # ⚠️ `server-providers.yml`（2026-10-15 15:01 起出现在现场根目录）是**现场独有
 #    的服务端 provider 配置**（lib/server/provider-config.ts 运行时读取；当前
 #    内容 = voxcpm-tts 免钥 baseUrl → host.docker.internal:8000）。机器特定，
@@ -44,6 +52,7 @@ XFILE = {'tsconfig.tsbuildinfo','.env.local','_diag.txt','tts_proxy.py',
 #    （文件本身未删除、未移动，仍在 D:\OpenMAIC\tts_proxy.py；.dockerignore
 #     已同步挡住它进镜像。）
 XGLOT = ['packages/*/rollup.config-*.cjs',   # 构建期临时产物，非源码
+         '.backup_*/*',                       # 现场手工备份目录（如 .backup_classroom_dou_*）
          '历史副本*']                          # 0 字节杂项：见下方说明
 # ⚠️ `历史副本（内容相同），保留仅作回退，**不要再改它**。` 是仓库根一个 0 字节
 #    文件，不属于源码。它**会被某个外部进程反复重建**（2026-10-11 移走三次、每次
