@@ -494,11 +494,14 @@ export function CourseModelConfigPanel({}) {
   // Providers without a model concept (e.g. doubao-tts, whose voices are the
   // unit of selection) resolve to an empty model name. Fall back to the
   // provider's display name so the card still tells the user what is wired up
-  // instead of rendering a bare "loop" label with no text.
+  // instead of rendering a bare "loop" label with no text. The parenthetical
+  // suffix（如「（火山引擎）」）is dropped: the card is ~190px wide and would
+  // otherwise truncate mid-bracket.
   const ttsProviderLabel = useMemo(() => {
     const builtIn = ttsBuiltIn(ttsProviderId);
-    if (builtIn?.name) return builtIn.name;
-    return ttsProvidersConfig[ttsProviderId]?.customName || ttsProviderId;
+    const name =
+      builtIn?.name || ttsProvidersConfig[ttsProviderId]?.customName || ttsProviderId;
+    return name.replace(/[（(][^）)]*[）)]/g, '').trim() || name;
   }, [ttsProviderId, ttsProvidersConfig]);
 
   const asrModelName = useMemo(() => {
